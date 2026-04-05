@@ -1,4 +1,4 @@
-# Parity Status — claw-code Rust Port
+# Parity Status — atlas-code Rust Port
 
 Last updated: 2026-04-03
 
@@ -58,7 +58,7 @@ Canonical scenario map: `rust/mock_parity_scenarios.json`
 - **Evidence:** branch-only diff adds `rust/crates/runtime/src/bash_validation.rs` and a `runtime::lib` export (`+1005` across 2 files).
 - **Main-branch reality:** `rust/crates/runtime/src/bash.rs` is still the active on-`main` implementation at **283 LOC**, with timeout/background/sandbox execution. `PermissionEnforcer::check_bash()` adds read-only gating on `main`, but the dedicated validation module is not landed.
 
-### Bash tool — upstream has 18 submodules, Rust has 1:
+### Bash tool — upstream has 18 submodules, Rust has 1
 
 - On `main`, this statement is still materially true.
 - Harness coverage proves bash execution and prompt escalation flows, but not the full upstream validation matrix.

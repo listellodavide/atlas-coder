@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/claw-code-parity.iml" filepath="$PROJECT_DIR$/.idea/claw-code-parity.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/atlas-code-parity.iml" filepath="$PROJECT_DIR$/.idea/atlas-code-parity.iml" />
     </modules>
   </component>
 </project>

@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/api/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/commands/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/compat-harness/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/rust/crates/memclaw/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/rust/crates/mematlas/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/mock-anthropic-service/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/plugins/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/rust/crates/runtime/src" isTestSource="false" />

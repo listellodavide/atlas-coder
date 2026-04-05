@@ -11,13 +11,13 @@ cd rust/
 cargo build --release
 
 # Interactive REPL
-./target/release/claw
+./target/release/atlas
 
 # One-shot prompt
-./target/release/claw prompt "explain this codebase"
+./target/release/atlas prompt "explain this codebase"
 
 # With a specific model
-./target/release/claw --model sonnet prompt "fix the bug in main.rs"
+./target/release/atlas --model sonnet prompt "fix the bug in main.rs"
 ```
 
 ---
@@ -153,9 +153,11 @@ Config file hierarchy — each layer merges cleanly:
 ### 🧵 Autonomous Agents
 
 #### `/rlm <task>` — Autonomous Loop Mode
+
 Runs up to 30 plan → execute → verify iterations autonomously until the task is marked complete or the limit is reached.
 
 #### `/squad <task>` — 5-Agent Dev Pipeline (via Ollama)
+
 A full local multi-agent pipeline inspired by the `the-dev-squad` orchestrator. Requires a local Ollama model to be active (set with `/ollama <model>`).
 
 **Pipeline phases:**
@@ -174,11 +176,11 @@ Phase 4 — Testing    Agent D reviews code; C ↔ D loop until all pass
 
 ---
 
-### 🧠 MemClaw — Codebase Intelligence
+### 🧠 Mematlas — Codebase Intelligence
 
 - Index multi-repo, multi-module codebases for LLM-assisted development
 - Structural + semantic knowledge graph over the workspace
-- `/memclaw [learn|...]` — trigger autonomous codebase indexing
+- `/mematlas [learn|...]` — trigger autonomous codebase indexing
 
 ---
 
@@ -244,7 +246,7 @@ Hook scripts are configured per-project in `.claude/hooks/`.
 ## CLI Flags
 
 ```
-claw [OPTIONS] [COMMAND]
+atlas [OPTIONS] [COMMAND]
 
 Options:
   --model MODEL                    Set the active model (alias or full name)
@@ -289,7 +291,7 @@ Commands:
 | `/mcp [list\|show\|help]` | MCP server inspection |
 | `/plugin [...]` | Plugin management |
 | `/skills [list\|install\|help]` | Skills registry |
-| `/memclaw [action]` | Codebase intelligence |
+| `/mematlas [action]` | Codebase intelligence |
 | `/diff` | Git diff of current changes |
 | `/commit` | Generate commit message + commit |
 | `/pr [context]` | Draft or create a pull request |
@@ -329,7 +331,7 @@ rust/
     ├── api/                    # HTTP client, SSE streaming, request/response types, auth
     ├── commands/               # Slash command registry, parser, help renderer (145 commands)
     ├── compat-harness/         # Tool/prompt manifest extraction harness
-    ├── memclaw/                # Codebase intelligence indexer and retrieval
+    ├── mematlas/                # Codebase intelligence indexer and retrieval
     ├── mock-anthropic-service/ # Deterministic local Anthropic-compatible mock for testing
     ├── plugins/                # Plugin lifecycle, registry, hook dispatch
     ├── runtime/                # Conversation loop, config loader, session, permissions, MCP, hooks
@@ -366,7 +368,7 @@ cargo run -p mock-anthropic-service -- --bind 127.0.0.1:0
 | Language | Rust (2021 edition) |
 | Crates in workspace | 11 |
 | Slash commands | 145 |
-| Binary name | `claw` |
+| Binary name | `atlas` |
 | Default model | `claude-opus-4-6` |
 | Default permission mode | `danger-full-access` |
 

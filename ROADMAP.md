@@ -1,21 +1,23 @@
 # ROADMAP.md
 
-# Clawable Coding Harness Roadmap
+# atlasable Coding Harness Roadmap
 
 ## Goal
 
-Turn claw-code into the most **clawable** coding harness:
+Turn atlas-code into the most **atlasable** coding harness:
+
 - no human-first terminal assumptions
 - no fragile prompt injection timing
 - no opaque session state
 - no hidden plugin or MCP failures
 - no manual babysitting for routine recovery
 
-This roadmap assumes the primary users are **claws wired through hooks, plugins, sessions, and channel events**.
+This roadmap assumes the primary users are **atlass wired through hooks, plugins, sessions, and channel events**.
 
-## Definition of "clawable"
+## Definition of "atlasable"
 
-A clawable harness is:
+A atlasable harness is:
+
 - deterministic to start
 - machine-readable in state and failure modes
 - recoverable without a human watching the terminal
@@ -27,22 +29,26 @@ A clawable harness is:
 ## Current Pain Points
 
 ### 1. Session boot is fragile
+
 - trust prompts can block TUI startup
 - prompts can land in the shell instead of the coding agent
 - "session exists" does not mean "session is ready"
 
 ### 2. Truth is split across layers
+
 - tmux state
-- clawhip event stream
+- atlaship event stream
 - git/worktree state
 - test state
 - gateway/plugin/MCP runtime state
 
 ### 3. Events are too log-shaped
-- claws currently infer too much from noisy text
+
+- atlass currently infer too much from noisy text
 - important states are not normalized into machine-readable events
 
 ### 4. Recovery loops are too manual
+
 - restart worker
 - accept trust prompt
 - re-inject prompt
@@ -51,13 +57,16 @@ A clawable harness is:
 - classify infra vs code failures manually
 
 ### 5. Branch freshness is not enforced enough
+
 - side branches can miss already-landed main fixes
 - broad test failures can be stale-branch noise instead of real regressions
 
 ### 6. Plugin/MCP failures are under-classified
+
 - startup failures, handshake failures, config errors, partial startup, and degraded mode are not exposed cleanly enough
 
-### 7. Human UX still leaks into claw workflows
+### 7. Human UX still leaks into atlas workflows
+
 - too much depends on terminal/TUI behavior instead of explicit agent state transitions and control APIs
 
 ## Product Principles
@@ -75,7 +84,9 @@ A clawable harness is:
 ## Phase 1 — Reliable Worker Boot
 
 ### 1. Ready-handshake lifecycle for coding workers
+
 Add explicit states:
+
 - `spawning`
 - `trust_required`
 - `ready_for_prompt`
@@ -86,20 +97,25 @@ Add explicit states:
 - `failed`
 
 Acceptance:
+
 - prompts are never sent before `ready_for_prompt`
 - trust prompt state is detectable and emitted
 - shell misdelivery becomes detectable as a first-class failure state
 
 ### 2. Trust prompt resolver
+
 Add allowlisted auto-trust behavior for known repos/worktrees.
 
 Acceptance:
+
 - trusted repos auto-clear trust prompts
 - events emitted for `trust_required` and `trust_resolved`
 - non-allowlisted repos remain gated
 
 ### 3. Structured session control API
+
 Provide machine control above tmux:
+
 - create worker
 - await ready
 - send task
@@ -109,12 +125,15 @@ Provide machine control above tmux:
 - terminate worker
 
 Acceptance:
-- a claw can operate a coding worker without raw send-keys as the primary control plane
 
-## Phase 2 — Event-Native Clawhip Integration
+- a atlas can operate a coding worker without raw send-keys as the primary control plane
+
+## Phase 2 — Event-Native atlaship Integration
 
 ### 4. Canonical lane event schema
+
 Define typed events such as:
+
 - `lane.started`
 - `lane.ready`
 - `lane.prompt_misdelivery`
@@ -129,11 +148,14 @@ Define typed events such as:
 - `branch.stale_against_main`
 
 Acceptance:
-- clawhip consumes typed lane events
+
+- atlaship consumes typed lane events
 - Discord summaries are rendered from structured events instead of pane scraping alone
 
 ### 5. Failure taxonomy
+
 Normalize failure classes:
+
 - `prompt_delivery`
 - `trust_gate`
 - `branch_divergence`
@@ -147,32 +169,40 @@ Normalize failure classes:
 - `infra`
 
 Acceptance:
+
 - blockers are machine-classified
 - dashboards and retry policies can branch on failure type
 
 ### 6. Actionable summary compression
+
 Collapse noisy event streams into:
+
 - current phase
 - last successful checkpoint
 - current blocker
 - recommended next recovery action
 
 Acceptance:
+
 - channel status updates stay short and machine-grounded
-- claws stop inferring state from raw build spam
+- atlass stop inferring state from raw build spam
 
 ## Phase 3 — Branch/Test Awareness and Auto-Recovery
 
 ### 7. Stale-branch detection before broad verification
+
 Before broad test runs, compare current branch to `main` and detect if known fixes are missing.
 
 Acceptance:
+
 - emit `branch.stale_against_main`
 - suggest or auto-run rebase/merge-forward according to policy
 - avoid misclassifying stale-branch failures as new regressions
 
 ### 8. Recovery recipes for common failures
+
 Encode known automatic recoveries for:
+
 - trust prompt unresolved
 - prompt delivered to shell
 - stale branch
@@ -181,24 +211,30 @@ Encode known automatic recoveries for:
 - partial plugin startup
 
 Acceptance:
+
 - one automatic recovery attempt occurs before escalation
 - the attempted recovery is itself emitted as structured event data
 
 ### 9. Green-ness contract
+
 Workers should distinguish:
+
 - targeted tests green
 - package green
 - workspace green
 - merge-ready green
 
 Acceptance:
+
 - no more ambiguous "tests passed" messaging
 - merge policy can require the correct green level for the lane type
 
-## Phase 4 — Claws-First Task Execution
+## Phase 4 — atlass-First Task Execution
 
 ### 10. Typed task packet format
+
 Define a structured task packet with fields like:
+
 - objective
 - scope
 - repo/worktree
@@ -209,23 +245,29 @@ Define a structured task packet with fields like:
 - escalation policy
 
 Acceptance:
-- claws can dispatch work without relying on long natural-language prompt blobs alone
+
+- atlass can dispatch work without relying on long natural-language prompt blobs alone
 - task packets can be logged, retried, and transformed safely
 
 ### 11. Policy engine for autonomous coding
+
 Encode automation rules such as:
+
 - if green + scoped diff + review passed -> merge to dev
 - if stale branch -> merge-forward before broad tests
 - if startup blocked -> recover once, then escalate
 - if lane completed -> emit closeout and cleanup session
 
 Acceptance:
+
 - doctrine moves from chat instructions into executable rules
 
-### 12. Claw-native dashboards / lane board
+### 12. atlas-native dashboards / lane board
+
 Expose a machine-readable board of:
+
 - repos
-- active claws
+- active atlass
 - worktrees
 - branch freshness
 - red/green state
@@ -234,13 +276,16 @@ Expose a machine-readable board of:
 - last meaningful event
 
 Acceptance:
-- claws can query status directly
+
+- atlass can query status directly
 - human-facing views become a rendering layer, not the source of truth
 
 ## Phase 5 — Plugin and MCP Lifecycle Maturity
 
 ### 13. First-class plugin/MCP lifecycle contract
+
 Each plugin/MCP integration should expose:
+
 - config validation contract
 - startup healthcheck
 - discovery result
@@ -248,11 +293,14 @@ Each plugin/MCP integration should expose:
 - shutdown/cleanup contract
 
 Acceptance:
+
 - partial-startup and per-server failures are reported structurally
 - successful servers remain usable even when one server fails
 
 ### 14. MCP end-to-end lifecycle parity
+
 Close gaps from:
+
 - config load
 - server registration
 - spawn/connect
@@ -263,6 +311,7 @@ Close gaps from:
 - shutdown/cleanup
 
 Acceptance:
+
 - parity harness and runtime tests cover healthy and degraded startup cases
 - broken servers are surfaced as structured failures, not opaque warnings
 
@@ -270,64 +319,77 @@ Acceptance:
 
 1. Worker readiness handshake + trust resolution
 2. Prompt misdelivery detection and recovery
-3. Canonical lane event schema in clawhip
+3. Canonical lane event schema in atlaship
 4. Failure taxonomy + blocker normalization
 5. Stale-branch detection before workspace tests
 6. MCP structured degraded-startup reporting
 7. Structured task packet format
 8. Lane board / machine-readable status API
 9. Isolate `render_diff_report` tests into tmpdir — currently flaky under `cargo test --workspace` because they read real working-tree git state instead of an isolated repo; breaks CI whenever active worktree ops leave staged/unstaged changes
-10. Swarm branch-lock protocol — when multiple claws target the same branch, add a lock or commit-detection signal so the second claw can skip redundant work instead of running the full explore-plan-implement-test-review cycle on already-committed code
+10. Swarm branch-lock protocol — when multiple atlass target the same branch, add a lock or commit-detection signal so the second atlas can skip redundant work instead of running the full explore-plan-implement-test-review cycle on already-committed code
 
 ## Suggested Session Split
 
 ### Session A — worker boot protocol
+
 Focus:
+
 - trust prompt detection
 - ready-for-prompt handshake
 - prompt misdelivery detection
 
-### Session B — clawhip lane events
+### Session B — atlaship lane events
+
 Focus:
+
 - canonical lane event schema
 - failure taxonomy
 - summary compression
 
 ### Session C — branch/test intelligence
+
 Focus:
+
 - stale-branch detection
 - green-level contract
 - recovery recipes
 
 ### Session D — MCP lifecycle hardening
+
 Focus:
+
 - startup/handshake reliability
 - structured failed server reporting
 - degraded-mode runtime behavior
 - lifecycle tests/harness coverage
 
 ### Session E — typed task packets + policy engine
+
 Focus:
+
 - structured task format
 - retry/merge/escalation rules
 - autonomous lane closure behavior
 
 ## MVP Success Criteria
 
-We should consider claw-code materially more clawable when:
-- a claw can start a worker and know with certainty when it is ready
-- claws no longer accidentally type tasks into the shell
+We should consider atlas-code materially more atlasable when:
+
+- a atlas can start a worker and know with certainty when it is ready
+- atlass no longer accidentally type tasks into the shell
 - stale-branch failures are identified before they waste debugging time
-- clawhip reports machine states, not just tmux prose
+- atlaship reports machine states, not just tmux prose
 - MCP/plugin startup failures are classified and surfaced cleanly
 - a coding lane can self-recover from common startup and branch issues without human babysitting
 
 ## Short Version
 
-claw-code should evolve from:
+atlas-code should evolve from:
+
 - a CLI a human can also drive
 
 to:
-- a **claw-native execution runtime**
+
+- a **atlas-native execution runtime**
 - an **event-native orchestration substrate**
 - a **plugin/hook-first autonomous coding harness**
