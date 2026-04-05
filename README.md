@@ -335,7 +335,7 @@ rust/
     ├── mock-anthropic-service/ # Deterministic local Anthropic-compatible mock for testing
     ├── plugins/                # Plugin lifecycle, registry, hook dispatch
     ├── runtime/                # Conversation loop, config loader, session, permissions, MCP, hooks
-    ├── rusty-claude-cli/       # CLI binary: REPL, streaming display, argument parsing
+    ├── atlas-cli/              # CLI binary: REPL, streaming display, argument parsing
     ├── squad/                  # 5-agent Ollama pipeline (roles, agent, orchestrator, events)
     ├── telemetry/              # Analytics, session tracing, cost tracking
     └── tools/                  # Tool implementations: Bash, ReadFile, WriteFile, Edit, Grep, Glob, Web, Agent, Todo...
