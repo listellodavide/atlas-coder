@@ -96,7 +96,7 @@ impl SquadOrchestrator {
             let response = self.agent_a.turn(&prompt).await?;
             events::emit(&self.log_path, "planning", "A", &response);
 
-            plan_text = response.clone();
+            plan_text.clone_from(&response);
 
             if response.contains(PLAN_READY) {
                 break;
@@ -152,7 +152,10 @@ impl SquadOrchestrator {
             events::emit_system(
                 &self.log_path,
                 "review",
-                &format!("💬  Review round {}/{MAX_REVIEW_ROUNDS}: B has questions, routing to A.", round + 1),
+                &format!(
+                    "💬  Review round {}/{MAX_REVIEW_ROUNDS}: B has questions, routing to A.",
+                    round + 1
+                ),
             );
 
             let a_prompt = format!(
@@ -193,14 +196,13 @@ impl SquadOrchestrator {
         let plan_path = env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
             .join("plan.md");
-        if let Ok(clean_plan) = self.strip_signal_tokens(&current_plan) {
-            let _ = fs::write(&plan_path, &clean_plan);
-            events::emit_system(
-                &self.log_path,
-                "review",
-                &format!("📄  Approved plan written to {}", plan_path.display()),
-            );
-        }
+        let clean_plan = Self::strip_signal_tokens(&current_plan);
+        let _ = fs::write(&plan_path, &clean_plan);
+        events::emit_system(
+            &self.log_path,
+            "review",
+            &format!("📄  Approved plan written to {}", plan_path.display()),
+        );
 
         self.agent_a.reset();
         self.agent_b.reset();
@@ -214,11 +216,7 @@ impl SquadOrchestrator {
         &mut self,
         plan_text: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        events::emit_system(
-            &self.log_path,
-            "coding",
-            "⌨️   Phase 3 — Coding (Agent C)",
-        );
+        events::emit_system(&self.log_path, "coding", "⌨️   Phase 3 — Coding (Agent C)");
 
         let prompt = format!(
             "Here is your approved plan:\n\n{plan_text}\n\n\
@@ -273,14 +271,21 @@ impl SquadOrchestrator {
 
         for round in 0..MAX_FIX_ROUNDS {
             if d_response.contains(ALL_PASS) {
-                events::emit_system(&self.log_path, "testing", "✅  All tests passed. Agent D approved.");
+                events::emit_system(
+                    &self.log_path,
+                    "testing",
+                    "✅  All tests passed. Agent D approved.",
+                );
                 break;
             }
 
             events::emit_system(
                 &self.log_path,
                 "testing",
-                &format!("🔧  Fix round {}/{MAX_FIX_ROUNDS}: D found issues, routing to C.", round + 1),
+                &format!(
+                    "🔧  Fix round {}/{MAX_FIX_ROUNDS}: D found issues, routing to C.",
+                    round + 1
+                ),
             );
 
             let c_prompt = format!(
@@ -335,7 +340,11 @@ impl SquadOrchestrator {
         let plan_text = match self.phase_planning(task).await {
             Ok(p) => p,
             Err(e) => {
-                events::emit_system(&self.log_path, "planning", &format!("❌  Phase 1 failed: {e}"));
+                events::emit_system(
+                    &self.log_path,
+                    "planning",
+                    &format!("❌  Phase 1 failed: {e}"),
+                );
                 events::write_footer(&self.log_path, false, task);
                 return Err(e);
             }
@@ -345,7 +354,11 @@ impl SquadOrchestrator {
         let approved_plan = match self.phase_review(plan_text).await {
             Ok(p) => p,
             Err(e) => {
-                events::emit_system(&self.log_path, "review", &format!("❌  Phase 2 failed: {e}"));
+                events::emit_system(
+                    &self.log_path,
+                    "review",
+                    &format!("❌  Phase 2 failed: {e}"),
+                );
                 events::write_footer(&self.log_path, false, task);
                 return Err(e);
             }
@@ -355,7 +368,11 @@ impl SquadOrchestrator {
         let code_text = match self.phase_coding(&approved_plan).await {
             Ok(c) => c,
             Err(e) => {
-                events::emit_system(&self.log_path, "coding", &format!("❌  Phase 3 failed: {e}"));
+                events::emit_system(
+                    &self.log_path,
+                    "coding",
+                    &format!("❌  Phase 3 failed: {e}"),
+                );
                 events::write_footer(&self.log_path, false, task);
                 return Err(e);
             }
@@ -365,7 +382,11 @@ impl SquadOrchestrator {
         match self.phase_testing(&approved_plan, &code_text).await {
             Ok(_) => {}
             Err(e) => {
-                events::emit_system(&self.log_path, "testing", &format!("❌  Phase 4 failed: {e}"));
+                events::emit_system(
+                    &self.log_path,
+                    "testing",
+                    &format!("❌  Phase 4 failed: {e}"),
+                );
                 events::write_footer(&self.log_path, false, task);
                 return Err(e);
             }
@@ -378,7 +399,7 @@ impl SquadOrchestrator {
     // ─── Helpers ────────────────────────────────────────────────────────────
 
     /// Remove internal signal tokens from text before writing to disk.
-    fn strip_signal_tokens(&self, text: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn strip_signal_tokens(text: &str) -> String {
         let tokens = [
             PLAN_READY,
             PLAN_APPROVED,
@@ -392,6 +413,6 @@ impl SquadOrchestrator {
         for token in tokens {
             result = result.replace(token, "");
         }
-        Ok(result.trim().to_string())
+        result.trim().to_string()
     }
 }

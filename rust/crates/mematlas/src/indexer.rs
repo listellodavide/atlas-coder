@@ -1,6 +1,6 @@
 use crate::config::MemAtlasConfig;
 use crate::graph::{CodeGraph, EdgeKind, FileNode};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ignore::WalkBuilder;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
@@ -129,12 +129,22 @@ impl Indexer {
             let line = line.trim();
             match lang {
                 "rs" => {
-                    if (line.starts_with("pub fn ") || line.starts_with("fn ")) && line.contains('(') {
-                        if let Some(name) = line.split_whitespace().nth(2).or_else(|| line.split_whitespace().nth(1)) {
-                           symbols.push(name.split('(').next().unwrap_or(name).to_string());
+                    if (line.starts_with("pub fn ") || line.starts_with("fn "))
+                        && line.contains('(')
+                    {
+                        if let Some(name) = line
+                            .split_whitespace()
+                            .nth(2)
+                            .or_else(|| line.split_whitespace().nth(1))
+                        {
+                            symbols.push(name.split('(').next().unwrap_or(name).to_string());
                         }
                     } else if line.starts_with("pub struct ") || line.starts_with("struct ") {
-                         if let Some(name) = line.split_whitespace().nth(2).or_else(|| line.split_whitespace().nth(1)) {
+                        if let Some(name) = line
+                            .split_whitespace()
+                            .nth(2)
+                            .or_else(|| line.split_whitespace().nth(1))
+                        {
                             symbols.push(name.to_string());
                         }
                     } else if line.starts_with("use ") {
@@ -143,7 +153,7 @@ impl Indexer {
                 }
                 "ts" | "js" | "tsx" | "jsx" => {
                     if line.contains("function ") || line.contains("class ") {
-                         symbols.push(line.to_string());
+                        symbols.push(line.to_string());
                     } else if line.starts_with("import ") {
                         imports.push(line.to_string());
                     }

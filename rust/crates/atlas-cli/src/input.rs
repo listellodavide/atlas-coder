@@ -8,7 +8,7 @@ use rustyline::error::ReadlineError;
 use rustyline::highlight::{CmdKind, Highlighter};
 use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
-use rustyline::validate::Validator;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{
     Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers,
 };
@@ -95,7 +95,47 @@ impl Highlighter for SlashCommandHelper {
     }
 }
 
-impl Validator for SlashCommandHelper {}
+impl Validator for SlashCommandHelper {
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
+        let input = ctx.input();
+        if input.ends_with('\\') {
+            return Ok(ValidationResult::Incomplete);
+        }
+
+        // Smart multi-line: Detect unclosed quotes or brackets
+        let mut in_quote = false;
+        let mut bracket_stack = Vec::new();
+        let mut escaped = false;
+
+        for c in input.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match c {
+                '\\' => escaped = true,
+                '"' => in_quote = !in_quote,
+                '(' | '[' | '{' if !in_quote => bracket_stack.push(c),
+                ')' if !in_quote && bracket_stack.last() == Some(&'(') => {
+                    bracket_stack.pop();
+                }
+                ']' if !in_quote && bracket_stack.last() == Some(&'[') => {
+                    bracket_stack.pop();
+                }
+                '}' if !in_quote && bracket_stack.last() == Some(&'{') => {
+                    bracket_stack.pop();
+                }
+                _ => {}
+            }
+        }
+
+        if in_quote || !bracket_stack.is_empty() {
+            Ok(ValidationResult::Incomplete)
+        } else {
+            Ok(ValidationResult::Valid(None))
+        }
+    }
+}
 impl Helper for SlashCommandHelper {}
 
 pub struct LineEditor {
@@ -109,12 +149,67 @@ impl LineEditor {
         let config = Config::builder()
             .completion_type(CompletionType::List)
             .edit_mode(EditMode::Emacs)
+            .bracketed_paste(true)
             .build();
         let mut editor = Editor::<SlashCommandHelper, DefaultHistory>::with_config(config)
             .expect("rustyline editor should initialize");
         editor.set_helper(Some(SlashCommandHelper::new(completions)));
-        editor.bind_sequence(KeyEvent(KeyCode::Char('J'), Modifiers::CTRL), Cmd::Newline);
-        editor.bind_sequence(KeyEvent(KeyCode::Enter, Modifiers::SHIFT), Cmd::Newline);
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('j'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('J'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Enter, Modifiers::SHIFT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Enter, Modifiers::ALT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Enter, Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('o'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('O'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\n'), Modifiers::ALT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\n'), Modifiers::ALT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\r'), Modifiers::ALT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\n'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\r'), Modifiers::CTRL),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\n'), Modifiers::SHIFT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
+        editor.bind_sequence(
+            KeyEvent(KeyCode::Char('\r'), Modifiers::SHIFT),
+            Cmd::Insert(1, "\n".to_string()),
+        );
 
         Self {
             prompt: prompt.into(),

@@ -212,8 +212,8 @@ pub fn attempt_recovery(scenario: &FailureScenario, ctx: &mut RecoveryContext) -
     if *attempt_count >= recipe.max_attempts {
         let result = RecoveryResult::EscalationRequired {
             reason: format!(
-                "max recovery attempts ({}) exceeded for {}",
-                recipe.max_attempts, scenario
+                "max recovery attempts ({}) exceeded for {scenario}",
+                recipe.max_attempts
             ),
         };
         ctx.events.push(RecoveryEvent::RecoveryAttempted {
@@ -244,7 +244,7 @@ pub fn attempt_recovery(scenario: &FailureScenario, ctx: &mut RecoveryContext) -
         let remaining: Vec<RecoveryStep> = recipe.steps[executed.len()..].to_vec();
         if executed.is_empty() {
             RecoveryResult::EscalationRequired {
-                reason: format!("recovery failed at first step for {}", scenario),
+                reason: format!("recovery failed at first step for {scenario}"),
             }
         } else {
             RecoveryResult::PartialRecovery {
@@ -254,7 +254,7 @@ pub fn attempt_recovery(scenario: &FailureScenario, ctx: &mut RecoveryContext) -
         }
     } else {
         RecoveryResult::Recovered {
-            steps_taken: recipe.steps.len() as u32,
+            steps_taken: u32::try_from(recipe.steps.len()).expect("recipe steps should fit in u32"),
         }
     };
 

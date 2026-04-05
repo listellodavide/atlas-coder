@@ -1399,7 +1399,11 @@ pub fn validate_slash_command_input(
             SlashCommand::Login
         }
         "ollama" => {
-            let model = if args.is_empty() { None } else { Some(args.join(" ")) };
+            let model = if args.is_empty() {
+                None
+            } else {
+                Some(args.join(" "))
+            };
             SlashCommand::Ollama { model }
         }
         "rlm" => {
@@ -1410,7 +1414,9 @@ pub fn validate_slash_command_input(
                     "/rlm <task>",
                 ));
             }
-            SlashCommand::Rlm { task: args.join(" ") }
+            SlashCommand::Rlm {
+                task: args.join(" "),
+            }
         }
         "squad" => {
             if args.is_empty() {
@@ -1420,7 +1426,9 @@ pub fn validate_slash_command_input(
                     "/squad <task>",
                 ));
             }
-            SlashCommand::Squad { task: args.join(" ") }
+            SlashCommand::Squad {
+                task: args.join(" "),
+            }
         }
         "logout" => {
             validate_no_args(command, &args)?;
@@ -1897,17 +1905,15 @@ fn slash_command_category(name: &str) -> &'static str {
         | "ollama" => "Session & visibility",
         "compact" | "clear" | "config" | "memory" | "init" | "diff" | "commit" | "pr" | "issue"
         | "export" | "plugin" | "branch" | "add-dir" | "files" | "hooks" | "release-notes"
-        | "plugins" | "marketplace" => {
-            "Workspace & git"
-        }
+        | "plugins" | "marketplace" => "Workspace & git",
         "agents" | "skills" | "teleport" | "debug-tool-call" | "mcp" | "context" | "tasks"
         | "doctor" | "ide" | "desktop" => "Discovery & debugging",
         "bughunter" | "ultraplan" | "review" | "security-review" | "advisor" | "insights"
         | "rlm" | "plan" | "squad" => "Analysis & automation",
         "theme" | "vim" | "voice" | "color" | "effort" | "fast" | "brief" | "output-style"
         | "keybindings" | "stickers" => "Appearance & input",
-        "copy" | "share" | "feedback" | "summary" | "tag" | "thinkback" | "exit"
-        | "upgrade" | "rewind" => "Communication & control",
+        "copy" | "share" | "feedback" | "summary" | "tag" | "thinkback" | "exit" | "upgrade"
+        | "rewind" => "Communication & control",
         _ => "Other",
     }
 }
@@ -3260,6 +3266,7 @@ fn format_mcp_oauth(oauth: Option<&McpOAuthConfig>) -> String {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn handle_slash_command(
     input: &str,

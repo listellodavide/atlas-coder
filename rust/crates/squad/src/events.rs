@@ -20,12 +20,12 @@ use std::time::SystemTime;
 /// ANSI colors for each agent.
 fn agent_color(agent: &str) -> &'static str {
     match agent {
-        "A" => "\x1b[36m",   // cyan — Planner
-        "B" => "\x1b[35m",   // magenta — Reviewer
-        "C" => "\x1b[32m",   // green — Coder
-        "D" => "\x1b[33m",   // yellow — Tester
-        "S" => "\x1b[34m",   // blue — Supervisor
-        _ =>   "\x1b[0m",
+        "A" => "\x1b[36m", // cyan — Planner
+        "B" => "\x1b[35m", // magenta — Reviewer
+        "C" => "\x1b[32m", // green — Coder
+        "D" => "\x1b[33m", // yellow — Tester
+        "S" => "\x1b[34m", // blue — Supervisor
+        _ => "\x1b[0m",
     }
 }
 
@@ -59,7 +59,13 @@ fn append_to_log(log_path: &PathBuf, phase: &str, agent: &str, text: &str) {
             return;
         }
     };
-    let entry = format!("[{}] [{}] [Agent {}]\n{}\n---\n\n", now_iso(), phase, agent, text);
+    let entry = format!(
+        "[{}] [{}] [Agent {}]\n{}\n---\n\n",
+        now_iso(),
+        phase,
+        agent,
+        text
+    );
     let _ = file.write_all(entry.as_bytes());
 }
 
@@ -73,13 +79,13 @@ pub fn emit(log_path: &PathBuf, phase: &str, agent: &str, text: &str) {
     // Pretty-print each line with the agent label prefix
     let mut display = String::new();
     for line in text.lines() {
-        let _ = writeln!(
-            display,
-            "{color}[Agent {agent}]{RESET} {phase_dim} {line}"
-        );
+        let _ = writeln!(display, "{color}[Agent {agent}]{RESET} {phase_dim} {line}");
     }
     if text.is_empty() {
-        let _ = writeln!(display, "{color}[Agent {agent}]{RESET} {phase_dim} (empty response)");
+        let _ = writeln!(
+            display,
+            "{color}[Agent {agent}]{RESET} {phase_dim} (empty response)"
+        );
     }
     print!("{display}");
 
@@ -106,7 +112,11 @@ pub fn write_header(log_path: &PathBuf, task: &str, model: &str) {
 
 /// Write a completion summary to the log.
 pub fn write_footer(log_path: &PathBuf, success: bool, task: &str) {
-    let status = if success { "✅ COMPLETED" } else { "❌ FAILED" };
+    let status = if success {
+        "✅ COMPLETED"
+    } else {
+        "❌ FAILED"
+    };
     let footer = format!(
         "\n=== {status} ===\nTask: {task}\nFinished: {}\n",
         now_iso()
@@ -115,8 +125,14 @@ pub fn write_footer(log_path: &PathBuf, success: bool, task: &str) {
         let _ = file.write_all(footer.as_bytes());
     }
     if success {
-        println!("\n\x1b[32m{status}\x1b[0m — Dev Squad finished. Log at: {}", log_path.display());
+        println!(
+            "\n\x1b[32m{status}\x1b[0m — Dev Squad finished. Log at: {}",
+            log_path.display()
+        );
     } else {
-        println!("\n\x1b[31m{status}\x1b[0m — Dev Squad stopped. Log at: {}", log_path.display());
+        println!(
+            "\n\x1b[31m{status}\x1b[0m — Dev Squad stopped. Log at: {}",
+            log_path.display()
+        );
     }
 }

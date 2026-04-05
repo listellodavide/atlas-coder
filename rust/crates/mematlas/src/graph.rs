@@ -25,6 +25,12 @@ pub struct CodeGraph {
     path_to_index: HashMap<PathBuf, NodeIndex>,
 }
 
+impl Default for CodeGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeGraph {
     pub fn new() -> Self {
         Self {
@@ -84,7 +90,10 @@ impl CodeGraph {
                         }
                     }
                     // Also consider incoming edges for "depends on" / "is used by"
-                    for edge in self.graph.edges_directed(idx, petgraph::Direction::Incoming) {
+                    for edge in self
+                        .graph
+                        .edges_directed(idx, petgraph::Direction::Incoming)
+                    {
                         let neighbor = edge.source();
                         if !visited.contains(&neighbor) {
                             visited.insert(neighbor);

@@ -50,17 +50,21 @@ impl<'a> QueryEngine<'a> {
     pub fn context_slice_for(&self, path_str: &str, hops: u8) -> String {
         let path = Path::new(path_str);
         let neighborhood = self.graph.neighbourhood(path, hops);
-        
+
         let mut output = String::new();
         output.push_str(&format!("### Context slice for {}\n\n", path_str));
-        
+
         for idx in neighborhood {
             if let Some(node) = self.graph.node(idx) {
-                output.push_str(&format!("- **{}** ({})\n", node.path.display(), node.language));
+                output.push_str(&format!(
+                    "- **{}** ({})\n",
+                    node.path.display(),
+                    node.language
+                ));
                 output.push_str(&format!("  Summary: {}\n", node.summary));
             }
         }
-        
+
         output
     }
 
@@ -68,15 +72,18 @@ impl<'a> QueryEngine<'a> {
         let mut output = String::new();
         output.push_str("# MemAtlas Knowledge Graph Export\n\n");
         output.push_str(&format!("- **Total Files:** {}\n", self.graph.node_count()));
-        output.push_str(&format!("- **Total Edges:** {}\n\n", self.graph.edge_count()));
-        
+        output.push_str(&format!(
+            "- **Total Edges:** {}\n\n",
+            self.graph.edge_count()
+        ));
+
         output.push_str("## Files\n\n");
         for node in self.graph.nodes() {
             output.push_str(&format!("### {}\n", node.path.display()));
             output.push_str(&format!("- Language: {}\n", node.language));
             output.push_str(&format!("- Symbols: {}\n\n", node.summary));
         }
-        
+
         output
     }
 }

@@ -1532,8 +1532,30 @@ fn run_repl(
         input::LineEditor::new("> ", cli.repl_completion_candidates().unwrap_or_default());
     println!("{}", cli.startup_banner());
 
+    let abort_signal_clone = cli.abort_signal.clone();
+
+    // Spawn a persistent signal listener that will stay active for the whole REPL session.
+    // This ensures Ctrl+C is always caught and doesn't terminate the process.
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return Err("failed to start signal runtime".into());
+    };
+
+    thread::spawn(move || {
+        runtime.block_on(async move {
+            loop {
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    abort_signal_clone.abort();
+                }
+            }
+        });
+    });
+
     loop {
         editor.set_completions(cli.repl_completion_candidates().unwrap_or_default());
+        let _ = cli.abort_signal.reset();
         match editor.read_line()? {
             input::ReadOutcome::Submit(input) => {
                 let trimmed = input.trim().to_string();
@@ -1600,6 +1622,7 @@ struct LiveCli {
     system_prompt: Vec<String>,
     runtime: BuiltRuntime,
     session: SessionHandle,
+    abort_signal: runtime::HookAbortSignal,
 }
 
 struct RuntimePluginState {
@@ -1967,57 +1990,7 @@ fn mcp_annotation_flag(tool: &McpTool, key: &str) -> bool {
         .unwrap_or(false)
 }
 
-struct HookAbortMonitor {
-    stop_tx: Option<Sender<()>>,
-    join_handle: Option<JoinHandle<()>>,
-}
-
-impl HookAbortMonitor {
-    fn spawn(abort_signal: runtime::HookAbortSignal) -> Self {
-        Self::spawn_with_waiter(abort_signal, move |stop_rx, abort_signal| {
-            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            else {
-                return;
-            };
-
-            runtime.block_on(async move {
-                tokio::select! {
-                    _ = tokio::signal::ctrl_c() => {
-                        abort_signal.abort();
-                    }
-                    _ = async {
-                        // Just wait for stop signal
-                        let _ = stop_rx.recv();
-                    } => {}
-                }
-            });
-        })
-    }
-
-    fn spawn_with_waiter<F>(abort_signal: runtime::HookAbortSignal, wait_for_interrupt: F) -> Self
-    where
-        F: FnOnce(Receiver<()>, runtime::HookAbortSignal) + Send + 'static,
-    {
-        let (stop_tx, stop_rx) = mpsc::channel();
-        let join_handle = thread::spawn(move || wait_for_interrupt(stop_rx, abort_signal));
-
-        Self {
-            stop_tx: Some(stop_tx),
-            join_handle: Some(join_handle),
-        }
-    }
-
-    fn stop(mut self) {
-        if let Some(stop_tx) = self.stop_tx.take() {
-            let _ = stop_tx.send(());
-        }
-        if let Some(join_handle) = self.join_handle.take() {
-            let _ = join_handle.join();
-        }
-    }
-}
+// Removed HookAbortMonitor in favor of global signal handling.
 
 impl LiveCli {
     fn new(
@@ -2047,6 +2020,7 @@ impl LiveCli {
             system_prompt,
             runtime,
             session,
+            abort_signal: runtime::HookAbortSignal::new(),
         };
         cli.persist_session()?;
         Ok(cli)
@@ -2087,7 +2061,7 @@ impl LiveCli {
   \x1b[2mDirectory\x1b[0m        {}\n\
   \x1b[2mSession\x1b[0m          {}\n\
   \x1b[2mAuto-save\x1b[0m        {}\n\n\
-  Type \x1b[1m/help\x1b[0m for commands · \x1b[1m/status\x1b[0m for live context · \x1b[2m/resume latest\x1b[0m jumps back to the newest session · \x1b[1m/diff\x1b[0m then \x1b[1m/commit\x1b[0m to ship · \x1b[2mTab\x1b[0m for workflow completions · \x1b[2mShift+Enter\x1b[0m for newline",
+  Type \x1b[1m/help\x1b[0m for commands · \x1b[1m/status\x1b[0m for live context · \x1b[2m/resume latest\x1b[0m jumps back to the newest session · \x1b[1m/diff\x1b[0m then \x1b[1m/commit\x1b[0m to ship · \x1b[2mTab\x1b[0m for workflow completions · \x1b[2mAlt+Enter / Ctrl+O\x1b[0m for newline",
             self.model,
             self.permission_mode.as_str(),
             git_branch,
@@ -2112,8 +2086,7 @@ impl LiveCli {
     fn prepare_turn_runtime(
         &self,
         emit_output: bool,
-    ) -> Result<(BuiltRuntime, HookAbortMonitor), Box<dyn std::error::Error>> {
-        let hook_abort_signal = runtime::HookAbortSignal::new();
+    ) -> Result<BuiltRuntime, Box<dyn std::error::Error>> {
         let runtime = build_runtime(
             self.runtime.session().clone(),
             &self.session.id,
@@ -2125,10 +2098,9 @@ impl LiveCli {
             self.permission_mode,
             None,
         )?
-        .with_hook_abort_signal(hook_abort_signal.clone());
-        let hook_abort_monitor = HookAbortMonitor::spawn(hook_abort_signal);
+        .with_hook_abort_signal(self.abort_signal.clone());
 
-        Ok((runtime, hook_abort_monitor))
+        Ok(runtime)
     }
 
     fn replace_runtime(&mut self, runtime: BuiltRuntime) -> Result<(), Box<dyn std::error::Error>> {
@@ -2138,7 +2110,7 @@ impl LiveCli {
     }
 
     fn run_turn(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (mut runtime, hook_abort_monitor) = self.prepare_turn_runtime(true)?;
+        let mut runtime = self.prepare_turn_runtime(true)?;
         let mut spinner = Spinner::new();
         let mut stdout = io::stdout();
 
@@ -2150,8 +2122,6 @@ impl LiveCli {
 
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let result = runtime.run_turn(input, Some(&mut permission_prompter));
-
-        hook_abort_monitor.stop();
 
         match result {
             Ok(summary) => {
@@ -2195,10 +2165,9 @@ impl LiveCli {
     }
 
     fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (mut runtime, hook_abort_monitor) = self.prepare_turn_runtime(false)?;
+        let mut runtime = self.prepare_turn_runtime(false)?;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let result = runtime.run_turn(input, Some(&mut permission_prompter));
-        hook_abort_monitor.stop();
         let summary = result?;
         self.replace_runtime(runtime)?;
         self.persist_session()?;
@@ -2361,11 +2330,11 @@ impl LiveCli {
                 true
             }
             SlashCommand::Rlm { task } => {
-                self.run_rlm(task)?;
+                self.run_rlm(&task)?;
                 false
             }
             SlashCommand::Squad { task } => {
-                self.run_squad(task)?;
+                self.run_squad(&task)?;
                 false
             }
             SlashCommand::Doctor
@@ -2454,17 +2423,16 @@ impl LiveCli {
         );
     }
 
-    fn run_rlm(&mut self, task: String) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 Launching RLM Agent on task: {}", task);
+    fn run_rlm(&mut self, task: &str) -> Result<(), Box<dyn std::error::Error>> {
+        println!("🚀 Launching RLM Agent on task: {task}");
         let mut current_prompt = format!(
             "You are operating in an autonomous RLM mode (plan -> execute -> verify) for up to 30 iterations.\n\
-             Task: {}\n\
-             Please execute your Plan. Output 'TASK_COMPLETED' if you are completely finished.",
-            task
+             Task: {task}\n\
+             Please execute your Plan. Output 'TASK_COMPLETED' if you are completely finished."
         );
 
         for i in 1..=30 {
-            println!("\n▶️ RLM Iteration {}/30", i);
+            println!("\n▶️ RLM Iteration {i}/30");
             let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
 
             let summary = match self
@@ -2473,7 +2441,7 @@ impl LiveCli {
             {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("RLM execution failed: {}", e);
+                    eprintln!("RLM execution failed: {e}");
                     break;
                 }
             };
@@ -2494,7 +2462,7 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_squad(&mut self, task: String) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_squad(&mut self, task: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Validate that an Ollama model is active
         let model = self.model.clone();
         if !model.starts_with("ollama/") && !model.contains("ollama") {
@@ -2508,9 +2476,8 @@ impl LiveCli {
 
         println!(
             "\x1b[36m🤖 Launching Dev Squad\x1b[0m\n\
-             Model : {}\n\
-             Task  : {}\n",
-            model, task
+             Model : {model}\n\
+             Task  : {task}\n"
         );
 
         // Build a single-threaded Tokio runtime — we're already inside a sync context.
@@ -2945,33 +2912,34 @@ impl LiveCli {
     }
 
     fn run_bughunter(&self, scope: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        let scope = scope.unwrap_or("general codebase");
-        println!("{}", format_bughunter_report(Some(scope)));
-
-        // Try to get context from MemAtlas
         use mematlas::{MemAtlas, MemAtlasConfig};
+
+        let scope_display = scope.unwrap_or("general codebase");
+        println!("{}", format_bughunter_report(scope));
+
         let cwd = env::current_dir()?;
         let config = MemAtlasConfig::default_for(&cwd);
         let atlas = MemAtlas::new(config).ok();
 
         let context = if let Some(atlas) = atlas {
-            let hits = atlas.search(scope)?;
-            if !hits.is_empty() {
+            let hits = atlas.search(scope_display)?;
+            if hits.is_empty() {
+                None
+            } else {
                 println!(
                     "🧠 MemAtlas found {} relevant areas for bug hunting.",
                     hits.len()
                 );
                 let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                 for hit in hits.iter().take(3) {
-                    ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
+                    use std::fmt::Write as _;
+                    let _ = writeln!(ctx, "- {}: {}", hit.path, hit.summary);
                     if let Ok(slice) = atlas.context_slice(&hit.path) {
                         ctx.push_str(&slice);
                         ctx.push('\n');
                     }
                 }
                 Some(ctx)
-            } else {
-                None
             }
         } else {
             None
@@ -2979,50 +2947,48 @@ impl LiveCli {
 
         let prompt = if let Some(ctx) = context {
             format!(
-                "You are in BUGHUNTER mode. Scope: {}\n\n{}\n\nPlease analyze the context for potential bugs or security issues.",
-                scope, ctx
+                "You are in BUGHUNTER mode. Scope: {scope_display}\n\n{ctx}\n\nPlease analyze the context for potential bugs or security issues."
             )
         } else {
             format!(
-                "You are in BUGHUNTER mode. Scope: {}\n\nPlease analyze the current workspace for potential bugs or security issues.",
-                scope
+                "You are in BUGHUNTER mode. Scope: {scope_display}\n\nPlease analyze the current workspace for potential bugs or security issues."
             )
         };
 
         let response = self.run_internal_prompt_text(&prompt, false)?;
-        println!("\n--- BUGHUNTER ANALYSIS ---\n{}", response);
+        println!("\n--- BUGHUNTER ANALYSIS ---\n{response}");
 
         Ok(())
     }
 
     fn run_ultraplan(&self, task: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        use mematlas::{MemAtlas, MemAtlasConfig};
+
         let task = task.unwrap_or("general improvement");
         println!("{}", format_ultraplan_report(Some(task)));
-
-        // Try to get context from MemAtlas
-        use mematlas::{MemAtlas, MemAtlasConfig};
         let cwd = env::current_dir()?;
         let config = MemAtlasConfig::default_for(&cwd);
         let atlas = MemAtlas::new(config).ok();
 
         let context = if let Some(atlas) = atlas {
             let hits = atlas.search(task)?;
-            if !hits.is_empty() {
+            if hits.is_empty() {
+                None
+            } else {
                 println!(
                     "🧠 MemAtlas found {} relevant files for planning.",
                     hits.len()
                 );
                 let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                 for hit in hits.iter().take(3) {
-                    ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
+                    use std::fmt::Write as _;
+                    let _ = writeln!(ctx, "- {}: {}", hit.path, hit.summary);
                     if let Ok(slice) = atlas.context_slice(&hit.path) {
                         ctx.push_str(&slice);
                         ctx.push('\n');
                     }
                 }
                 Some(ctx)
-            } else {
-                None
             }
         } else {
             None
@@ -3030,18 +2996,16 @@ impl LiveCli {
 
         let prompt = if let Some(ctx) = context {
             format!(
-                "You are in ULTRAPLAN mode. Task: {}\n\n{}\n\nPlease provide a step-by-step plan to achieve this task.",
-                task, ctx
+                "You are in ULTRAPLAN mode. Task: {task}\n\n{ctx}\n\nPlease provide a step-by-step plan to achieve this task."
             )
         } else {
             format!(
-                "You are in ULTRAPLAN mode. Task: {}\n\nPlease provide a step-by-step plan to achieve this task.",
-                task
+                "You are in ULTRAPLAN mode. Task: {task}\n\nPlease provide a step-by-step plan to achieve this task."
             )
         };
 
         let response = self.run_internal_prompt_text(&prompt, false)?;
-        println!("\n--- ULTRAPLAN ---\n{}", response);
+        println!("\n--- ULTRAPLAN ---\n{response}");
 
         Ok(())
     }
@@ -3092,10 +3056,9 @@ impl LiveCli {
     }
 
     fn run_plan(&self, task: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        println!("{}", format_plan_report(task));
-
-        // Try to get status from MemAtlas
         use mematlas::{MemAtlas, MemAtlasConfig};
+
+        println!("{}", format_plan_report(task));
         let cwd = env::current_dir()?;
         let config = MemAtlasConfig::default_for(&cwd);
         let atlas = MemAtlas::new(config).ok();
@@ -3109,8 +3072,7 @@ impl LiveCli {
                     status.edges_created,
                     status
                         .last_indexed
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_else(|| "Never".to_string())
+                        .map_or_else(|| "Never".to_string(), |dt| dt.to_rfc3339())
                 );
                 println!("ℹ️ Planning will automatically use MemAtlas context.");
             } else {
@@ -3122,22 +3084,23 @@ impl LiveCli {
         if let Some(task) = task {
             let context = if let Some(ref atlas) = atlas {
                 let hits = atlas.search(task)?;
-                if !hits.is_empty() {
+                if hits.is_empty() {
+                    None
+                } else {
                     println!(
                         "🧠 MemAtlas found {} relevant files for planning.",
                         hits.len()
                     );
                     let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                     for hit in hits.iter().take(3) {
-                        ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
+                        use std::fmt::Write as _;
+                        let _ = writeln!(ctx, "- {}: {}", hit.path, hit.summary);
                         if let Ok(slice) = atlas.context_slice(&hit.path) {
                             ctx.push_str(&slice);
                             ctx.push('\n');
                         }
                     }
                     Some(ctx)
-                } else {
-                    None
                 }
             } else {
                 None
@@ -3145,18 +3108,16 @@ impl LiveCli {
 
             let prompt = if let Some(ctx) = context {
                 format!(
-                    "You are in PLANNING mode. Task: {}\n\n{}\n\nPlease provide a structured plan and list of tasks to achieve this goal.",
-                    task, ctx
+                    "You are in PLANNING mode. Task: {task}\n\n{ctx}\n\nPlease provide a structured plan and list of tasks to achieve this goal."
                 )
             } else {
                 format!(
-                    "You are in PLANNING mode. Task: {}\n\nPlease provide a structured plan and list of tasks to achieve this goal.",
-                    task
+                    "You are in PLANNING mode. Task: {task}\n\nPlease provide a structured plan and list of tasks to achieve this goal."
                 )
             };
 
             let response = self.run_internal_prompt_text(&prompt, false)?;
-            println!("\n--- GENERATED PLAN ---\n{}", response);
+            println!("\n--- GENERATED PLAN ---\n{response}");
         }
 
         Ok(())
@@ -3187,9 +3148,9 @@ impl LiveCli {
                 let query = a.trim_start_matches("search").trim();
                 let hits = atlas.search(query)?;
                 if hits.is_empty() {
-                    println!("No matches found for '{}'.", query);
+                    println!("No matches found for '{query}'.");
                 } else {
-                    println!("Top results for '{}':", query);
+                    println!("Top results for '{query}':");
                     for hit in hits {
                         println!("  - {} (score: {:.2})", hit.path, hit.score);
                         println!("    {}", hit.summary);
@@ -3202,7 +3163,7 @@ impl LiveCli {
                 println!("  Files indexed: {}", status.files_indexed);
                 println!("  Edges created: {}", status.edges_created);
                 if let Some(dt) = status.last_indexed {
-                    println!("  Last indexed:  {}", dt);
+                    println!("  Last indexed:  {dt}");
                 } else {
                     println!("  Last indexed:  Never");
                 }
@@ -4873,7 +4834,7 @@ impl ApiClient for ApiRuntimeClient {
             let mut saw_stop = false;
 
             loop {
-                if abort_signal.map_or(false, |s: &HookAbortSignal| s.is_aborted()) {
+                if abort_signal.is_some_and(HookAbortSignal::is_aborted) {
                     return Err(RuntimeError::new("Turn aborted by user"));
                 }
 
@@ -4887,9 +4848,9 @@ impl ApiClient for ApiRuntimeClient {
                         }
                         return Err(RuntimeError::new("Turn aborted by user"));
                     }
-                    _ = async {
+                    () = async {
                         loop {
-                            if abort_signal.map_or(false, |s: &HookAbortSignal| s.is_aborted()) {
+                            if abort_signal.is_some_and(HookAbortSignal::is_aborted) {
                                 return;
                             }
                             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -5889,7 +5850,10 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
     writeln!(out, "  atlas agents")?;
     writeln!(out, "  atlas mcp")?;
     writeln!(out, "  atlas skills")?;
-    writeln!(out, "  atlas system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
+    writeln!(
+        out,
+        "  atlas system-prompt [--cwd PATH] [--date YYYY-MM-DD]"
+    )?;
     writeln!(out, "  atlas login")?;
     writeln!(out, "  atlas logout")?;
     writeln!(out, "  atlas init")?;
@@ -5994,8 +5958,8 @@ mod tests {
     };
     use api::MessageResponse;
     use runtime::{
-        AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, HookAbortSignal, MessageRole,
-        PermissionMode, Session, ToolExecutor,
+        AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, HookAbortSignal,
+        MessageRole, PermissionMode, Session, ToolExecutor,
     };
     use serde_json::json;
     use std::fs;

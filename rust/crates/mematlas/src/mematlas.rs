@@ -3,9 +3,9 @@ use crate::graph::CodeGraph;
 use crate::indexer::Indexer;
 use crate::query::{QueryEngine, SearchResult};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use chrono::{DateTime, Utc};
 
 pub struct MemAtlas {
     config: MemAtlasConfig,
@@ -44,7 +44,8 @@ impl MemAtlas {
 
         let bytes = self.graph.serialize()?;
         self.db.insert("graph", bytes)?;
-        self.db.insert("last_indexed", Utc::now().to_rfc3339().as_bytes())?;
+        self.db
+            .insert("last_indexed", Utc::now().to_rfc3339().as_bytes())?;
         self.db.flush()?;
 
         Ok(LearnResult {
@@ -64,7 +65,11 @@ impl MemAtlas {
     }
 
     pub fn status(&self) -> MemAtlasStatus {
-        let last_indexed = self.db.get("last_indexed").ok().flatten()
+        let last_indexed = self
+            .db
+            .get("last_indexed")
+            .ok()
+            .flatten()
             .and_then(|b| String::from_utf8(b.to_vec()).ok())
             .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
             .map(|dt| dt.with_timezone(&Utc));

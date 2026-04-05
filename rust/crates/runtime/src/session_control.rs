@@ -4,10 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::{Deserialize, Serialize};
+// Remove unused serde imports
 
 use crate::session::{Session, SessionError};
-use crate::worker_boot::{Worker, WorkerReadySnapshot, WorkerRegistry, WorkerStatus};
+// Remove unused worker_boot imports
 
 pub const PRIMARY_SESSION_EXTENSION: &str = "jsonl";
 pub const LEGACY_SESSION_EXTENSION: &str = "json";

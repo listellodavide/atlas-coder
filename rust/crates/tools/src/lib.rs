@@ -1647,7 +1647,7 @@ fn run_remote_trigger(input: RemoteTriggerInput) -> Result<String, String> {
                 "method": method,
                 "status_code": status,
                 "body": truncated_body,
-                "success": status >= 200 && status < 300
+                "success": (200..300).contains(&status)
             }))
         }
         Err(e) => to_pretty_json(json!({
@@ -3136,7 +3136,7 @@ fn persist_agent_terminal_state(
     let mut next_manifest = manifest.clone();
     next_manifest.status = status.to_string();
     next_manifest.completed_at = Some(iso8601_now());
-    next_manifest.current_blocker = blocker.clone();
+    next_manifest.current_blocker.clone_from(&blocker);
     next_manifest.error = error;
     if let Some(blocker) = blocker {
         next_manifest.lane_events.push(LaneEvent {
@@ -3304,7 +3304,7 @@ impl ApiClient for ProviderRuntimeClient {
             let mut saw_stop = false;
 
             loop {
-                if abort_signal.map_or(false, |s| s.is_aborted()) {
+                if abort_signal.is_some_and(HookAbortSignal::is_aborted) {
                     return Err(RuntimeError::new("Turn aborted by user"));
                 }
 
@@ -3318,9 +3318,9 @@ impl ApiClient for ProviderRuntimeClient {
                         }
                         return Err(RuntimeError::new("Turn aborted by user"));
                     }
-                    _ = async {
+                    () = async {
                         loop {
-                            if abort_signal.map_or(false, |s: &HookAbortSignal| s.is_aborted()) {
+                            if abort_signal.is_some_and(HookAbortSignal::is_aborted) {
                                 return;
                             }
                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -6416,8 +6416,9 @@ mod tests {
         assert_eq!(enter_output["previousLocalMode"], "acceptEdits");
         assert_eq!(enter_output["currentLocalMode"], "plan");
 
-        let local_settings = std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
-            .expect("local settings after enter");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
+                .expect("local settings after enter");
         assert!(local_settings.contains(r#""defaultMode": "plan""#));
         let state =
             std::fs::read_to_string(cwd.join(".atlas").join("tool-state").join("plan-mode.json"))
@@ -6432,8 +6433,9 @@ mod tests {
         assert_eq!(exit_output["previousLocalMode"], "acceptEdits");
         assert_eq!(exit_output["currentLocalMode"], "acceptEdits");
 
-        let local_settings = std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
-            .expect("local settings after exit");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
+                .expect("local settings after exit");
         assert!(local_settings.contains(r#""defaultMode": "acceptEdits""#));
         assert!(!cwd
             .join(".atlas")
@@ -6487,8 +6489,9 @@ mod tests {
         assert_eq!(exit_output["changed"], true);
         assert_eq!(exit_output["currentLocalMode"], serde_json::Value::Null);
 
-        let local_settings = std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
-            .expect("local settings after exit");
+        let local_settings =
+            std::fs::read_to_string(cwd.join(".atlas").join("settings.local.json"))
+                .expect("local settings after exit");
         let local_settings_json: serde_json::Value =
             serde_json::from_str(&local_settings).expect("valid settings json");
         assert_eq!(

@@ -182,6 +182,7 @@ where
         }
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: String) -> Self {
         self.session.model = Some(model);
         self
@@ -322,7 +323,10 @@ where
                 system_prompt: self.system_prompt.clone(),
                 messages: self.session.messages.clone(),
             };
-            let events = match self.api_client.stream(request, Some(&self.hook_abort_signal)) {
+            let events = match self
+                .api_client
+                .stream(request, Some(&self.hook_abort_signal))
+            {
                 Ok(events) => events,
                 Err(error) => {
                     self.record_turn_failed(iterations, &error);

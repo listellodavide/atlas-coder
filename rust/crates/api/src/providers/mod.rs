@@ -1,16 +1,13 @@
-use std::future::Future;
-use std::pin::Pin;
-
-use crate::error::ApiError;
 use crate::types::{MessageRequest, MessageResponse};
 
 pub mod anthropic;
 pub mod openai_compat;
 
-pub type ProviderFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ApiError>> + Send + 'a>>;
+pub type ProviderFuture<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, crate::error::ApiError>> + Send + 'a>>;
 
-pub trait Provider {
-    type Stream;
+pub trait Provider: Send + Sync {
+    type Stream: Send + 'static;
 
     fn send_message<'a>(
         &'a self,
@@ -22,6 +19,7 @@ pub trait Provider {
         request: &'a MessageRequest,
     ) -> ProviderFuture<'a, Self::Stream>;
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
