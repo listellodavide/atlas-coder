@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use crate::mcp::mcp_tool_name;
-use crate::mcp_stdio::McpServerManager;
+use crate::mcp_stdio::{McpServerManager, McpServerManagerError};
 use serde::{Deserialize, Serialize};
 
 /// Status of a managed MCP server connection.
@@ -179,7 +179,7 @@ impl McpToolRegistry {
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|error| format!("failed to create MCP tool runtime: {error}"))?;
+                    .map_err(|error: std::io::Error| format!("failed to create MCP tool runtime: {error}"))?;
 
                 runtime.block_on(async move {
                     let response = {
@@ -189,12 +189,12 @@ impl McpToolRegistry {
                         manager
                             .discover_tools()
                             .await
-                            .map_err(|error| error.to_string())?;
+                            .map_err(|error: McpServerManagerError| error.to_string())?;
                         let response = manager
                             .call_tool(&qualified_tool_name, arguments)
                             .await
-                            .map_err(|error| error.to_string());
-                        let shutdown = manager.shutdown().await.map_err(|error| error.to_string());
+                            .map_err(|error: McpServerManagerError| error.to_string());
+                        let shutdown = manager.shutdown().await.map_err(|error: McpServerManagerError| error.to_string());
 
                         match (response, shutdown) {
                             (Ok(response), Ok(())) => Ok(response),
@@ -900,9 +900,9 @@ mod tests {
         );
         registry.register_server("beta", McpConnectionStatus::Connected, vec![], vec![], None);
         let after_create = registry.len();
-        registry.disconnect("alpha");
+        let _ = registry.disconnect("alpha");
         let after_first_remove = registry.len();
-        registry.disconnect("beta");
+        let _ = registry.disconnect("beta");
 
         // then
         assert_eq!(after_create, 2);

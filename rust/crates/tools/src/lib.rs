@@ -7,6 +7,7 @@ use api::{
     max_tokens_for_model, resolve_model_alias, ContentBlockDelta, InputContentBlock, InputMessage,
     MessageRequest, MessageResponse, OutputContentBlock, ProviderClient,
     StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    ApiError,
 };
 use plugins::PluginTool;
 use reqwest::blocking::Client;
@@ -3310,7 +3311,7 @@ impl ApiClient for ProviderRuntimeClient {
 
                 let event = tokio::select! {
                     next = stream.next_event() => {
-                        next.map_err(|error| RuntimeError::new(error.to_string()))?
+                        next.map_err(|error: ApiError| RuntimeError::new(error.to_string()))?
                     }
                     _ = tokio::signal::ctrl_c() => {
                         if let Some(s) = abort_signal {
@@ -4827,7 +4828,7 @@ mod tests {
         agent_permission_policy, allowed_tools_for_subagent, classify_lane_failure,
         execute_agent_with_spawn, execute_tool, final_assistant_text, mvp_tool_specs,
         permission_mode_from_plugin, persist_agent_terminal_state, push_output_block, AgentInput,
-        AgentJob, GlobalToolRegistry, LaneFailureClass, SubagentToolExecutor,
+        AgentJob, GlobalToolRegistry, HookAbortSignal, LaneFailureClass, SubagentToolExecutor,
     };
     use api::OutputContentBlock;
     use runtime::{
@@ -5822,7 +5823,11 @@ mod tests {
     }
 
     impl runtime::ApiClient for MockSubagentApiClient {
-        fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+        fn stream(
+            &mut self,
+            request: ApiRequest,
+            _abort_signal: Option<&HookAbortSignal>,
+        ) -> Result<Vec<AssistantEvent>, RuntimeError> {
             self.calls += 1;
             match self.calls {
                 1 => {

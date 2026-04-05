@@ -535,7 +535,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        edit_file, glob_search, grep_search, is_symlink_escape, read_file, read_file_in_workspace,
+        edit_file, glob_search, grep_search, read_file,
         write_file, GrepSearchInput, MAX_WRITE_SIZE,
     };
 

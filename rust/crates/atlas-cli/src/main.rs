@@ -43,10 +43,10 @@ use runtime::{
     parse_oauth_callback_request_target, pricing_for_model, resolve_sandbox_status,
     save_oauth_credentials, ApiClient, ApiRequest, AssistantEvent, CompactionConfig, ConfigLoader,
     ConfigSource, ContentBlock, ConversationMessage, ConversationRuntime, HookAbortSignal,
-    McpServerManager, McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest, OAuthConfig,
-    OAuthTokenExchangeRequest, PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent,
-    ResolvedPermissionMode, RuntimeError, Session, TokenUsage, ToolError, ToolExecutor,
-    UsageTracker,
+    McpServerManager, McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest,
+    OAuthConfig, OAuthTokenExchangeRequest, PermissionMode, PermissionPolicy, ProjectContext,
+    PromptCacheEvent, ResolvedPermissionMode, RuntimeError, Session, TokenUsage, ToolError,
+    ToolExecutor, UsageTracker,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -1555,7 +1555,7 @@ fn run_repl(
 
     loop {
         editor.set_completions(cli.repl_completion_candidates().unwrap_or_default());
-        let _ = cli.abort_signal.reset();
+        cli.abort_signal.reset();
         match editor.read_line()? {
             input::ReadOutcome::Submit(input) => {
                 let trimmed = input.trim().to_string();
@@ -1875,6 +1875,7 @@ impl RuntimeMcpState {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn build_runtime_mcp_state(
     runtime_config: &runtime::RuntimeConfig,
 ) -> Result<
@@ -2321,7 +2322,7 @@ impl LiveCli {
             }
             SlashCommand::Ollama { model } => {
                 if let Some(m) = model {
-                    let ollama_model = format!("ollama/{}", m);
+                    let ollama_model = format!("ollama/{m}");
                     self.set_model(Some(ollama_model))?;
                 } else {
                     println!("Please specify an Ollama model. (Hint: run `ollama list` in terminal) \nExample: /ollama qwen2.5-coder:latest");
@@ -2486,8 +2487,8 @@ impl LiveCli {
             .build()?;
 
         let result = rt.block_on(async {
-            let mut orchestrator = SquadOrchestrator::new(&model, &task)?;
-            orchestrator.run(&task).await
+            let mut orchestrator = SquadOrchestrator::new(&model, task)?;
+            orchestrator.run(task).await
         });
 
         if let Err(ref e) = result {
@@ -5936,31 +5937,14 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_runtime_plugin_state_with_loader, build_runtime_with_plugin_state,
-        create_managed_session_handle, describe_tool_progress, filter_tool_specs,
-        format_bughunter_report, format_commit_preflight_report, format_commit_skipped_report,
-        format_compact_report, format_cost_report, format_internal_prompt_progress_line,
-        format_issue_report, format_model_report, format_model_switch_report,
-        format_permissions_report, format_permissions_switch_report, format_pr_report,
-        format_resume_report, format_status_report, format_tool_call_start, format_tool_result,
-        format_ultraplan_report, format_unknown_slash_command,
-        format_unknown_slash_command_message, normalize_permission_mode, parse_args,
-        parse_git_status_branch, parse_git_status_metadata_for, parse_git_workspace_summary,
-        permission_policy, print_help_to, push_output_block, render_config_report,
-        render_diff_report, render_memory_report, render_repl_help, render_resume_usage,
-        resolve_model_alias, resolve_session_reference, response_to_events,
-        resume_supported_slash_commands, run_resume_command,
-        slash_command_completion_candidates_with_sessions, status_context, validate_no_args,
-        write_mcp_server_fixture, CliAction, CliOutputFormat, CliToolExecutor, GitWorkspaceSummary,
-        InternalPromptProgressEvent, InternalPromptProgressState, LiveCli, SlashCommand,
-        StatusUsage, DEFAULT_MODEL,
-    };
+    use super::*;
     use api::MessageResponse;
+    use plugins::{PluginManagerConfig, PluginTool, PluginToolDefinition, PluginToolPermission};
     use runtime::{
         AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, HookAbortSignal,
         MessageRole, PermissionMode, Session, ToolExecutor,
     };
+    use std::sync::mpsc::Receiver;
     use serde_json::json;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -7951,7 +7935,7 @@ mod sandbox_report_tests {
         let (ready_tx, ready_rx) = mpsc::channel();
         let monitor = HookAbortMonitor::spawn_with_waiter(
             abort_signal.clone(),
-            move |stop_rx, abort_signal| {
+            move |stop_rx: Receiver<()>, abort_signal: HookAbortSignal| {
                 ready_tx.send(()).expect("ready signal");
                 let _ = stop_rx.recv();
                 assert!(!abort_signal.is_aborted());
@@ -7970,7 +7954,7 @@ mod sandbox_report_tests {
         let (done_tx, done_rx) = mpsc::channel();
         let monitor = HookAbortMonitor::spawn_with_waiter(
             abort_signal.clone(),
-            move |_stop_rx, abort_signal| {
+            move |_stop_rx: Receiver<()>, abort_signal: HookAbortSignal| {
                 abort_signal.abort();
                 done_tx.send(()).expect("done signal");
             },

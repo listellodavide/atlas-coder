@@ -797,6 +797,7 @@ mod tests {
     };
     use crate::prompt::{ProjectContext, SystemPromptBuilder};
     use crate::session::{ContentBlock, MessageRole, Session};
+    use crate::hooks::HookAbortSignal;
     use crate::usage::TokenUsage;
     use crate::ToolError;
     use std::fs;
@@ -1554,6 +1555,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::TextDelta("done".to_string()),
@@ -1653,6 +1655,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::ToolUse {
@@ -1694,6 +1697,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Err(RuntimeError::new("upstream failed"))
             }
