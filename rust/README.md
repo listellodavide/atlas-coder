@@ -1,6 +1,6 @@
-# 🦞 Claw Code — Rust Implementation
+# 🦞 Atlas Code — Rust Implementation
 
-A high-performance Rust rewrite of the Claw Code CLI agent harness. Built for speed, safety, and native tool execution.
+A high-performance Rust rewrite of the Atlas Code CLI agent harness. Built for speed, safety, and native tool execution.
 
 ## Quick Start
 
@@ -10,13 +10,13 @@ cd rust/
 cargo build --release
 
 # Run interactive REPL
-./target/release/claw
+./target/release/atlas
 
 # One-shot prompt
-./target/release/claw prompt "explain this codebase"
+./target/release/atlas prompt "explain this codebase"
 
 # With specific model
-./target/release/claw --model sonnet prompt "fix the bug in main.rs"
+./target/release/atlas --model sonnet prompt "fix the bug in main.rs"
 ```
 
 ## Configuration
@@ -32,7 +32,7 @@ export ANTHROPIC_BASE_URL="https://your-proxy.com"
 Or authenticate via OAuth:
 
 ```bash
-claw login
+atlas login
 ```
 
 ## Mock parity harness
@@ -110,7 +110,7 @@ Short names resolve to the latest model versions:
 ## CLI Flags
 
 ```
-claw [OPTIONS] [COMMAND]
+atlas [OPTIONS] [COMMAND]
 
 Options:
   --model MODEL                    Set the model (alias or full name)
@@ -161,7 +161,7 @@ rust/
     ├── compat-harness/     # TS manifest extraction harness
     ├── mock-anthropic-service/ # Deterministic local Anthropic-compatible mock
     ├── runtime/            # Session, config, permissions, MCP, prompts
-    ├── rusty-claude-cli/   # Main CLI binary (`claw`)
+    ├── rusty-claude-cli/   # Main CLI binary (`atlas`)
     └── tools/              # Built-in tool implementations
 ```
 
@@ -179,7 +179,7 @@ rust/
 
 - **~20K lines** of Rust
 - **7 crates** in workspace
-- **Binary name:** `claw`
+- **Binary name:** `atlas`
 - **Default model:** `claude-opus-4-6`
 - **Default permissions:** `danger-full-access`
 

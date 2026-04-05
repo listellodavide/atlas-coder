@@ -34,7 +34,6 @@ use commands::{
     handle_skills_slash_command, render_slash_command_help, resume_supported_slash_commands,
     slash_command_specs, validate_slash_command_input, SlashCommand,
 };
-use squad::SquadOrchestrator;
 use compat_harness::{extract_manifest, UpstreamPaths};
 use init::initialize_repo;
 use plugins::{PluginHooks, PluginManager, PluginManagerConfig, PluginRegistry};
@@ -43,14 +42,15 @@ use runtime::{
     clear_oauth_credentials, format_usd, generate_pkce_pair, generate_state, load_system_prompt,
     parse_oauth_callback_request_target, pricing_for_model, resolve_sandbox_status,
     save_oauth_credentials, ApiClient, ApiRequest, AssistantEvent, CompactionConfig, ConfigLoader,
-    ConfigSource, ContentBlock, ConversationMessage, ConversationRuntime, McpServerManager,
-    McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest, OAuthConfig,
+    ConfigSource, ContentBlock, ConversationMessage, ConversationRuntime, HookAbortSignal,
+    McpServerManager, McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest, OAuthConfig,
     OAuthTokenExchangeRequest, PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent,
     ResolvedPermissionMode, RuntimeError, Session, TokenUsage, ToolError, ToolExecutor,
     UsageTracker,
 };
 use serde::Deserialize;
 use serde_json::json;
+use squad::SquadOrchestrator;
 use tools::{GlobalToolRegistry, RuntimeToolDefinition, ToolSearchOutput};
 
 const DEFAULT_MODEL: &str = "claude-opus-4-6";
@@ -92,13 +92,13 @@ type AllowedToolSet = BTreeSet<String>;
 fn main() {
     if let Err(error) = run() {
         let message = error.to_string();
-        if message.contains("`claw --help`") {
+        if message.contains("`atlas --help`") {
             eprintln!("error: {message}");
         } else {
             eprintln!(
                 "error: {message}
 
-Run `claw --help` for usage."
+Run `atlas --help` for usage."
             );
         }
         std::process::exit(1);
@@ -268,7 +268,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 index += 1;
             }
             "-p" => {
-                // Claw Code compat: -p "prompt" = one-shot prompt
+                // Atlas Code compat: -p "prompt" = one-shot prompt
                 let prompt = args[index + 1..].join(" ");
                 if prompt.trim().is_empty() {
                     return Err("-p requires a prompt string".to_string());
@@ -282,7 +282,7 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
                 });
             }
             "--print" => {
-                // Claw Code compat: --print makes output non-interactive
+                // Atlas Code compat: --print makes output non-interactive
                 output_format = CliOutputFormat::Text;
                 index += 1;
             }
@@ -426,11 +426,11 @@ fn bare_slash_command_guidance(command_name: &str) -> Option<String> {
         .find(|spec| spec.name == command_name)?;
     let guidance = if slash_command.resume_supported {
         format!(
-            "`claw {command_name}` is a slash command. Use `claw --resume SESSION.jsonl /{command_name}` or start `claw` and run `/{command_name}`."
+            "`atlas {command_name}` is a slash command. Use `atlas --resume SESSION.jsonl /{command_name}` or start `atlas` and run `/{command_name}`."
         )
     } else {
         format!(
-            "`claw {command_name}` is a slash command. Start `claw` and run `/{command_name}` inside the REPL."
+            "`atlas {command_name}` is a slash command. Start `atlas` and run `/{command_name}` inside the REPL."
         )
     };
     Some(guidance)
@@ -460,7 +460,7 @@ fn parse_direct_slash_cli_action(rest: &[String]) -> Result<CliAction, String> {
         Ok(Some(command)) => Err({
             let _ = command;
             format!(
-                "slash command {command_name} is interactive-only. Start `claw` and run it there, or use `claw --resume SESSION.jsonl {command_name}` / `claw --resume {latest} {command_name}` when the command is marked [resume] in /help.",
+                "slash command {command_name} is interactive-only. Start `atlas` and run it there, or use `atlas --resume SESSION.jsonl {command_name}` / `atlas --resume {latest} {command_name}` when the command is marked [resume] in /help.",
                 command_name = rest[0],
                 latest = LATEST_SESSION_REFERENCE,
             )
@@ -477,7 +477,7 @@ fn format_unknown_option(option: &str) -> String {
         message.push_str(suggestion);
         message.push('?');
     }
-    message.push_str("\nRun `claw --help` for usage.");
+    message.push_str("\nRun `atlas --help` for usage.");
     message
 }
 
@@ -488,7 +488,7 @@ fn format_unknown_direct_slash_command(name: &str) -> String {
         message.push('\n');
         message.push_str(&suggestions);
     }
-    message.push_str("\nRun `claw --help` for CLI usage, or start `claw` and use /help.");
+    message.push_str("\nRun `atlas --help` for CLI usage, or start `atlas` and use /help.");
     message
 }
 
@@ -1169,7 +1169,7 @@ fn render_resume_usage() -> String {
     format!(
         "Resume
   Usage            /resume <session-path|session-id|{LATEST_SESSION_REFERENCE}>
-  Auto-save        .claw/sessions/<session-id>.{PRIMARY_SESSION_EXTENSION}
+  Auto-save        .atlas/sessions/<session-id>.{PRIMARY_SESSION_EXTENSION}
   Tip              use /session list to inspect saved sessions"
     )
 }
@@ -1355,7 +1355,7 @@ fn run_resume_command(
             Ok(ResumeCommandOutcome {
                 session: cleared,
                 message: Some(format!(
-                    "Session cleared\n  Mode             resumed session reset\n  Previous session {previous_session_id}\n  Backup           {}\n  Resume previous  claw --resume {}\n  New session      {new_session_id}\n  Session file     {}",
+                    "Session cleared\n  Mode             resumed session reset\n  Previous session {previous_session_id}\n  Backup           {}\n  Resume previous  atlas --resume {}\n  New session      {new_session_id}\n  Session file     {}",
                     backup_path.display(),
                     backup_path.display(),
                     session_path.display()
@@ -1516,7 +1516,7 @@ fn run_resume_command(
         | SlashCommand::Tag { .. }
         | SlashCommand::OutputStyle { .. }
         | SlashCommand::AddDir { .. }
-        | SlashCommand::MemClaw { .. }
+        | SlashCommand::MemAtlas { .. }
         | SlashCommand::Restore { .. }
         | SlashCommand::Squad { .. } => Err("unsupported resumed slash command".into()),
     }
@@ -1558,7 +1558,13 @@ fn run_repl(
                     }
                 }
                 editor.push_history(input);
-                cli.run_turn(&trimmed)?;
+                if let Err(error) = cli.run_turn(&trimmed) {
+                    if error.to_string().contains("Turn aborted by user") {
+                        eprintln!("\x1b[31mInterrupted\x1b[0m");
+                    } else {
+                        return Err(error);
+                    }
+                }
             }
             input::ReadOutcome::Cancel => {}
             input::ReadOutcome::Exit => {
@@ -1977,17 +1983,14 @@ impl HookAbortMonitor {
             };
 
             runtime.block_on(async move {
-                let wait_for_stop = tokio::task::spawn_blocking(move || {
-                    let _ = stop_rx.recv();
-                });
-
                 tokio::select! {
-                    result = tokio::signal::ctrl_c() => {
-                        if result.is_ok() {
-                            abort_signal.abort();
-                        }
+                    _ = tokio::signal::ctrl_c() => {
+                        abort_signal.abort();
                     }
-                    _ = wait_for_stop => {}
+                    _ = async {
+                        // Just wait for stop signal
+                        let _ = stop_rx.recv();
+                    } => {}
                 }
             });
         })
@@ -2067,14 +2070,16 @@ impl LiveCli {
             |_| self.session.path.display().to_string(),
             |path| path.display().to_string(),
         );
+
         format!(
             "\x1b[38;5;196m\
- ██████╗██╗      █████╗ ██╗    ██╗\n\
-██╔════╝██║     ██╔══██╗██║    ██║\n\
-██║     ██║     ███████║██║ █╗ ██║\n\
-██║     ██║     ██╔══██║██║███╗██║\n\
-╚██████╗███████╗██║  ██║╚███╔███╔╝\n\
- ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝\x1b[0m \x1b[38;5;208mCode\x1b[0m 🦞\n\n\
+  _______  _______  ___      _______  _______\n\
+|   _   ||       ||   |    |   _   ||       |\n\
+|  |_|  ||_     _||   |    |  |_|  ||  _____|\n\
+|       |  |   |  |   |    |       || |_____ \n\
+|       |  |   |  |   |___ |       ||_____  |\n\
+|   _   |  |   |  |       ||   _   | _____| |\n\
+|__| |__|  |___|  |_______||__| |__||_______|\x1b[0m \x1b[38;5;208mCode\x1b[0m 🦞\n\n\
   \x1b[2mModel\x1b[0m            {}\n\
   \x1b[2mPermissions\x1b[0m      {}\n\
   \x1b[2mBranch\x1b[0m           {}\n\
@@ -2136,14 +2141,18 @@ impl LiveCli {
         let (mut runtime, hook_abort_monitor) = self.prepare_turn_runtime(true)?;
         let mut spinner = Spinner::new();
         let mut stdout = io::stdout();
+
         spinner.tick(
             "🦀 Thinking...",
             TerminalRenderer::new().color_theme(),
             &mut stdout,
         )?;
+
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let result = runtime.run_turn(input, Some(&mut permission_prompter));
+
         hook_abort_monitor.stop();
+
         match result {
             Ok(summary) => {
                 self.replace_runtime(runtime)?;
@@ -2333,8 +2342,8 @@ impl LiveCli {
                 Self::print_skills(args.as_deref())?;
                 false
             }
-            SlashCommand::MemClaw { action } => {
-                self.run_memclaw(action.as_deref())?;
+            SlashCommand::MemAtlas { action } => {
+                self.run_mematlas(action.as_deref())?;
                 false
             }
             SlashCommand::Plan { mode } => {
@@ -2458,10 +2467,10 @@ impl LiveCli {
             println!("\n▶️ RLM Iteration {}/30", i);
             let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
 
-            let summary = match self.runtime.run_turn(
-                &current_prompt,
-                Some(&mut permission_prompter),
-            ) {
+            let summary = match self
+                .runtime
+                .run_turn(&current_prompt, Some(&mut permission_prompter))
+            {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("RLM execution failed: {}", e);
@@ -2939,20 +2948,23 @@ impl LiveCli {
         let scope = scope.unwrap_or("general codebase");
         println!("{}", format_bughunter_report(Some(scope)));
 
-        // Try to get context from MemClaw
-        use memclaw::{MemClaw, MemClawConfig};
+        // Try to get context from MemAtlas
+        use mematlas::{MemAtlas, MemAtlasConfig};
         let cwd = env::current_dir()?;
-        let config = MemClawConfig::default_for(&cwd);
-        let claw = MemClaw::new(config).ok();
+        let config = MemAtlasConfig::default_for(&cwd);
+        let atlas = MemAtlas::new(config).ok();
 
-        let context = if let Some(claw) = claw {
-            let hits = claw.search(scope)?;
+        let context = if let Some(atlas) = atlas {
+            let hits = atlas.search(scope)?;
             if !hits.is_empty() {
-                println!("🧠 MemClaw found {} relevant areas for bug hunting.", hits.len());
-                let mut ctx = String::from("Relevant codebase context from MemClaw:\n");
+                println!(
+                    "🧠 MemAtlas found {} relevant areas for bug hunting.",
+                    hits.len()
+                );
+                let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                 for hit in hits.iter().take(3) {
                     ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
-                    if let Ok(slice) = claw.context_slice(&hit.path) {
+                    if let Ok(slice) = atlas.context_slice(&hit.path) {
                         ctx.push_str(&slice);
                         ctx.push('\n');
                     }
@@ -2987,20 +2999,23 @@ impl LiveCli {
         let task = task.unwrap_or("general improvement");
         println!("{}", format_ultraplan_report(Some(task)));
 
-        // Try to get context from MemClaw
-        use memclaw::{MemClaw, MemClawConfig};
+        // Try to get context from MemAtlas
+        use mematlas::{MemAtlas, MemAtlasConfig};
         let cwd = env::current_dir()?;
-        let config = MemClawConfig::default_for(&cwd);
-        let claw = MemClaw::new(config).ok();
+        let config = MemAtlasConfig::default_for(&cwd);
+        let atlas = MemAtlas::new(config).ok();
 
-        let context = if let Some(claw) = claw {
-            let hits = claw.search(task)?;
+        let context = if let Some(atlas) = atlas {
+            let hits = atlas.search(task)?;
             if !hits.is_empty() {
-                println!("🧠 MemClaw found {} relevant files for planning.", hits.len());
-                let mut ctx = String::from("Relevant codebase context from MemClaw:\n");
+                println!(
+                    "🧠 MemAtlas found {} relevant files for planning.",
+                    hits.len()
+                );
+                let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                 for hit in hits.iter().take(3) {
                     ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
-                    if let Ok(slice) = claw.context_slice(&hit.path) {
+                    if let Ok(slice) = atlas.context_slice(&hit.path) {
                         ctx.push_str(&slice);
                         ctx.push('\n');
                     }
@@ -3079,17 +3094,17 @@ impl LiveCli {
     fn run_plan(&self, task: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", format_plan_report(task));
 
-        // Try to get status from MemClaw
-        use memclaw::{MemClaw, MemClawConfig};
+        // Try to get status from MemAtlas
+        use mematlas::{MemAtlas, MemAtlasConfig};
         let cwd = env::current_dir()?;
-        let config = MemClawConfig::default_for(&cwd);
-        let claw = MemClaw::new(config).ok();
+        let config = MemAtlasConfig::default_for(&cwd);
+        let atlas = MemAtlas::new(config).ok();
 
-        if let Some(ref claw) = claw {
-            let status = claw.status();
+        if let Some(ref atlas) = atlas {
+            let status = atlas.status();
             if status.files_indexed > 0 {
                 println!(
-                    "🧠 MemClaw Index: {} files, {} edges. (last indexed: {})",
+                    "🧠 MemAtlas Index: {} files, {} edges. (last indexed: {})",
                     status.files_indexed,
                     status.edges_created,
                     status
@@ -3097,22 +3112,25 @@ impl LiveCli {
                         .map(|dt| dt.to_rfc3339())
                         .unwrap_or_else(|| "Never".to_string())
                 );
-                println!("ℹ️ Planning will automatically use MemClaw context.");
+                println!("ℹ️ Planning will automatically use MemAtlas context.");
             } else {
-                println!("⚠️ MemClaw index is empty. Run `/memclaw learn` to enable codebase-aware planning.");
+                println!("⚠️ MemAtlas index is empty. Run `/mematlas learn` to enable codebase-aware planning.");
             }
         }
 
-        // If a task is provided, generate a plan using MemClaw context
+        // If a task is provided, generate a plan using MemAtlas context
         if let Some(task) = task {
-            let context = if let Some(ref claw) = claw {
-                let hits = claw.search(task)?;
+            let context = if let Some(ref atlas) = atlas {
+                let hits = atlas.search(task)?;
                 if !hits.is_empty() {
-                    println!("🧠 MemClaw found {} relevant files for planning.", hits.len());
-                    let mut ctx = String::from("Relevant codebase context from MemClaw:\n");
+                    println!(
+                        "🧠 MemAtlas found {} relevant files for planning.",
+                        hits.len()
+                    );
+                    let mut ctx = String::from("Relevant codebase context from MemAtlas:\n");
                     for hit in hits.iter().take(3) {
                         ctx.push_str(&format!("- {}: {}\n", hit.path, hit.summary));
-                        if let Ok(slice) = claw.context_slice(&hit.path) {
+                        if let Ok(slice) = atlas.context_slice(&hit.path) {
                             ctx.push_str(&slice);
                             ctx.push('\n');
                         }
@@ -3144,11 +3162,11 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_memclaw(&mut self, action: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        use memclaw::{MemClaw, MemClawConfig};
+    fn run_mematlas(&mut self, action: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        use mematlas::{MemAtlas, MemAtlasConfig};
         let cwd = env::current_dir()?;
-        let config = MemClawConfig::default_for(&cwd);
-        let mut claw = MemClaw::new(config)?;
+        let config = MemAtlasConfig::default_for(&cwd);
+        let mut atlas = MemAtlas::new(config)?;
 
         match action {
             Some(a) if a.starts_with("learn") => {
@@ -3158,8 +3176,8 @@ impl LiveCli {
                 } else {
                     vec![PathBuf::from(path)]
                 };
-                println!("🧠 MemClaw: Learning from {}...", roots[0].display());
-                let result = claw.learn(&roots)?;
+                println!("🧠 MemAtlas: Learning from {}...", roots[0].display());
+                let result = atlas.learn(&roots)?;
                 println!(
                     "✅ Indexed {} files and created {} dependency edges.",
                     result.files_indexed, result.edges_created
@@ -3167,7 +3185,7 @@ impl LiveCli {
             }
             Some(a) if a.starts_with("search") => {
                 let query = a.trim_start_matches("search").trim();
-                let hits = claw.search(query)?;
+                let hits = atlas.search(query)?;
                 if hits.is_empty() {
                     println!("No matches found for '{}'.", query);
                 } else {
@@ -3179,8 +3197,8 @@ impl LiveCli {
                 }
             }
             Some("status") => {
-                let status = claw.status();
-                println!("📊 MemClaw Status:");
+                let status = atlas.status();
+                println!("📊 MemAtlas Status:");
                 println!("  Files indexed: {}", status.files_indexed);
                 println!("  Edges created: {}", status.edges_created);
                 if let Some(dt) = status.last_indexed {
@@ -3190,13 +3208,13 @@ impl LiveCli {
                 }
             }
             Some("export") => {
-                let output = claw.export()?;
-                let path = PathBuf::from("memclaw-export.md");
+                let output = atlas.export()?;
+                let path = PathBuf::from("mematlas-export.md");
                 fs::write(&path, output)?;
                 println!("💾 Knowledge graph exported to {}", path.display());
             }
             _ => {
-                println!("Usage: /memclaw [learn [path]|search <query>|status|export]");
+                println!("Usage: /mematlas [learn [path]|search <query>|status|export]");
             }
         }
         Ok(())
@@ -3205,7 +3223,7 @@ impl LiveCli {
 
 fn sessions_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
-    let path = cwd.join(".claw").join("sessions");
+    let path = cwd.join(".atlas").join("sessions");
     fs::create_dir_all(&path)?;
     Ok(path)
 }
@@ -3340,13 +3358,13 @@ fn latest_managed_session() -> Result<ManagedSessionSummary, Box<dyn std::error:
 
 fn format_missing_session_reference(reference: &str) -> String {
     format!(
-        "session not found: {reference}\nHint: managed sessions live in .claw/sessions/. Try `{LATEST_SESSION_REFERENCE}` for the most recent session or `/session list` in the REPL."
+        "session not found: {reference}\nHint: managed sessions live in .atlas/sessions/. Try `{LATEST_SESSION_REFERENCE}` for the most recent session or `/session list` in the REPL."
     )
 }
 
 fn format_no_managed_sessions() -> String {
     format!(
-        "no managed sessions found in .claw/sessions/\nStart `claw` to create a session, then rerun with `--resume {LATEST_SESSION_REFERENCE}`."
+        "no managed sessions found in .atlas/sessions/\nStart `atlas` to create a session, then rerun with `--resume {LATEST_SESSION_REFERENCE}`."
     )
 }
 
@@ -3437,7 +3455,7 @@ fn render_repl_help() -> String {
         "  Tab                  Complete commands, modes, and recent sessions".to_string(),
         "  Ctrl-C               Clear input (or exit on empty prompt)".to_string(),
         "  Shift+Enter/Ctrl+J   Insert a newline".to_string(),
-        "  Auto-save            .claw/sessions/<session-id>.jsonl".to_string(),
+        "  Auto-save            .atlas/sessions/<session-id>.jsonl".to_string(),
         "  Resume latest        /resume latest".to_string(),
         "  Browse sessions      /session list".to_string(),
         String::new(),
@@ -4094,7 +4112,7 @@ fn render_version_report() -> String {
     let git_sha = GIT_SHA.unwrap_or("unknown");
     let target = BUILD_TARGET.unwrap_or("unknown");
     format!(
-        "Claw Code\n  Version          {VERSION}\n  Git SHA          {git_sha}\n  Target           {target}\n  Build date       {DEFAULT_DATE}"
+        "Atlas Code\n  Version          {VERSION}\n  Git SHA          {git_sha}\n  Target           {target}\n  Build date       {DEFAULT_DATE}"
     )
 }
 
@@ -4780,11 +4798,14 @@ impl ApiRuntimeClient {
         progress_reporter: Option<InternalPromptProgressReporter>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let auth = resolve_cli_auth_source()?;
-        let mut provider_client = api::ProviderClient::from_model_with_anthropic_auth(&model, Some(auth))?;
-        
+        let mut provider_client =
+            api::ProviderClient::from_model_with_anthropic_auth(&model, Some(auth))?;
+
         // Anthropic base URL override logic (handled here to preserve CLI fallback behavior)
         if let api::ProviderClient::Anthropic(anthropic_client) = provider_client {
-            provider_client = api::ProviderClient::Anthropic(anthropic_client.with_base_url(api::read_base_url()));
+            provider_client = api::ProviderClient::Anthropic(
+                anthropic_client.with_base_url(api::read_base_url()),
+            );
         }
 
         Ok(Self {
@@ -4812,7 +4833,11 @@ fn resolve_cli_auth_source() -> Result<AuthSource, Box<dyn std::error::Error>> {
 
 impl ApiClient for ApiRuntimeClient {
     #[allow(clippy::too_many_lines)]
-    fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+    fn stream(
+        &mut self,
+        request: ApiRequest,
+        abort_signal: Option<&HookAbortSignal>,
+    ) -> Result<Vec<AssistantEvent>, RuntimeError> {
         if let Some(progress_reporter) = &self.progress_reporter {
             progress_reporter.mark_model_phase();
         }
@@ -4847,11 +4872,36 @@ impl ApiClient for ApiRuntimeClient {
             let mut pending_tool: Option<(String, String, String)> = None;
             let mut saw_stop = false;
 
-            while let Some(event) = stream
-                .next_event()
-                .await
-                .map_err(|error| RuntimeError::new(error.to_string()))?
-            {
+            loop {
+                if abort_signal.map_or(false, |s: &HookAbortSignal| s.is_aborted()) {
+                    return Err(RuntimeError::new("Turn aborted by user"));
+                }
+
+                let event = tokio::select! {
+                    next = stream.next_event() => {
+                        next.map_err(|error| RuntimeError::new(error.to_string()))?
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        if let Some(s) = abort_signal {
+                            s.abort();
+                        }
+                        return Err(RuntimeError::new("Turn aborted by user"));
+                    }
+                    _ = async {
+                        loop {
+                            if abort_signal.map_or(false, |s: &HookAbortSignal| s.is_aborted()) {
+                                return;
+                            }
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                    } => {
+                        return Err(RuntimeError::new("Turn aborted by user"));
+                    }
+                };
+
+                let Some(event) = event else {
+                    break;
+                };
                 match event {
                     ApiStreamEvent::MessageStart(start) => {
                         for block in start.message.content {
@@ -5797,52 +5847,52 @@ fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
 
 #[allow(clippy::too_many_lines)]
 fn print_help_to(out: &mut impl Write) -> io::Result<()> {
-    writeln!(out, "claw v{VERSION}")?;
+    writeln!(out, "atlas v{VERSION}")?;
     writeln!(out)?;
     writeln!(out, "Usage:")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--allowedTools TOOL[,TOOL...]]"
+        "  atlas [--model MODEL] [--allowedTools TOOL[,TOOL...]]"
     )?;
     writeln!(out, "      Start the interactive REPL")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--output-format text|json] prompt TEXT"
+        "  atlas [--model MODEL] [--output-format text|json] prompt TEXT"
     )?;
     writeln!(out, "      Send one prompt and exit")?;
     writeln!(
         out,
-        "  claw [--model MODEL] [--output-format text|json] TEXT"
+        "  atlas [--model MODEL] [--output-format text|json] TEXT"
     )?;
     writeln!(out, "      Shorthand non-interactive prompt mode")?;
     writeln!(
         out,
-        "  claw --resume [SESSION.jsonl|session-id|latest] [/status] [/compact] [...]"
+        "  atlas --resume [SESSION.jsonl|session-id|latest] [/status] [/compact] [...]"
     )?;
     writeln!(
         out,
         "      Inspect or maintain a saved session without entering the REPL"
     )?;
-    writeln!(out, "  claw help")?;
+    writeln!(out, "  atlas help")?;
     writeln!(out, "      Alias for --help")?;
-    writeln!(out, "  claw version")?;
+    writeln!(out, "  atlas version")?;
     writeln!(out, "      Alias for --version")?;
-    writeln!(out, "  claw status")?;
+    writeln!(out, "  atlas status")?;
     writeln!(
         out,
         "      Show the current local workspace status snapshot"
     )?;
-    writeln!(out, "  claw sandbox")?;
+    writeln!(out, "  atlas sandbox")?;
     writeln!(out, "      Show the current sandbox isolation snapshot")?;
-    writeln!(out, "  claw dump-manifests")?;
-    writeln!(out, "  claw bootstrap-plan")?;
-    writeln!(out, "  claw agents")?;
-    writeln!(out, "  claw mcp")?;
-    writeln!(out, "  claw skills")?;
-    writeln!(out, "  claw system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
-    writeln!(out, "  claw login")?;
-    writeln!(out, "  claw logout")?;
-    writeln!(out, "  claw init")?;
+    writeln!(out, "  atlas dump-manifests")?;
+    writeln!(out, "  atlas bootstrap-plan")?;
+    writeln!(out, "  atlas agents")?;
+    writeln!(out, "  atlas mcp")?;
+    writeln!(out, "  atlas skills")?;
+    writeln!(out, "  atlas system-prompt [--cwd PATH] [--date YYYY-MM-DD]")?;
+    writeln!(out, "  atlas login")?;
+    writeln!(out, "  atlas logout")?;
+    writeln!(out, "  atlas init")?;
     writeln!(out)?;
     writeln!(out, "Flags:")?;
     writeln!(
@@ -5883,7 +5933,7 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
     writeln!(out, "Session shortcuts:")?;
     writeln!(
         out,
-        "  REPL turns auto-save to .claw/sessions/<session-id>.{PRIMARY_SESSION_EXTENSION}"
+        "  REPL turns auto-save to .atlas/sessions/<session-id>.{PRIMARY_SESSION_EXTENSION}"
     )?;
     writeln!(
         out,
@@ -5894,25 +5944,25 @@ fn print_help_to(out: &mut impl Write) -> io::Result<()> {
         "  Use /session list in the REPL to browse managed sessions"
     )?;
     writeln!(out, "Examples:")?;
-    writeln!(out, "  claw --model claude-opus \"summarize this repo\"")?;
+    writeln!(out, "  atlas --model claude-opus \"summarize this repo\"")?;
     writeln!(
         out,
-        "  claw --output-format json prompt \"explain src/main.rs\""
+        "  atlas --output-format json prompt \"explain src/main.rs\""
     )?;
     writeln!(
         out,
-        "  claw --allowedTools read,glob \"summarize Cargo.toml\""
+        "  atlas --allowedTools read,glob \"summarize Cargo.toml\""
     )?;
-    writeln!(out, "  claw --resume {LATEST_SESSION_REFERENCE}")?;
+    writeln!(out, "  atlas --resume {LATEST_SESSION_REFERENCE}")?;
     writeln!(
         out,
-        "  claw --resume {LATEST_SESSION_REFERENCE} /status /diff /export notes.txt"
+        "  atlas --resume {LATEST_SESSION_REFERENCE} /status /diff /export notes.txt"
     )?;
-    writeln!(out, "  claw agents")?;
-    writeln!(out, "  claw mcp show my-server")?;
-    writeln!(out, "  claw /skills")?;
-    writeln!(out, "  claw login")?;
-    writeln!(out, "  claw init")?;
+    writeln!(out, "  atlas agents")?;
+    writeln!(out, "  atlas mcp show my-server")?;
+    writeln!(out, "  atlas /skills")?;
+    writeln!(out, "  atlas login")?;
+    writeln!(out, "  atlas init")?;
     Ok(())
 }
 
@@ -5942,12 +5992,9 @@ mod tests {
         InternalPromptProgressEvent, InternalPromptProgressState, LiveCli, SlashCommand,
         StatusUsage, DEFAULT_MODEL,
     };
-    use api::{MessageResponse, OutputContentBlock, Usage};
-    use plugins::{
-        PluginManager, PluginManagerConfig, PluginTool, PluginToolDefinition, PluginToolPermission,
-    };
+    use api::MessageResponse;
     use runtime::{
-        AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, MessageRole,
+        AssistantEvent, ConfigLoader, ContentBlock, ConversationMessage, HookAbortSignal, MessageRole,
         PermissionMode, Session, ToolExecutor,
     };
     use serde_json::json;
@@ -6080,24 +6127,24 @@ mod tests {
         let root = temp_dir();
         let cwd = root.join("project");
         let config_home = root.join("config-home");
-        std::fs::create_dir_all(cwd.join(".claw")).expect("project config dir should exist");
+        std::fs::create_dir_all(cwd.join(".atlas")).expect("project config dir should exist");
         std::fs::create_dir_all(&config_home).expect("config home should exist");
         std::fs::write(
-            cwd.join(".claw").join("settings.json"),
+            cwd.join(".atlas").join("settings.json"),
             r#"{"permissionMode":"acceptEdits"}"#,
         )
         .expect("project config should write");
 
-        let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
+        let original_config_home = std::env::var("ATLAS_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        std::env::set_var("CLAW_CONFIG_HOME", &config_home);
+        std::env::set_var("ATLAS_CONFIG_HOME", &config_home);
         std::env::remove_var("RUSTY_CLAUDE_PERMISSION_MODE");
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
         match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            Some(value) => std::env::set_var("ATLAS_CONFIG_HOME", value),
+            None => std::env::remove_var("ATLAS_CONFIG_HOME"),
         }
         match original_permission_mode {
             Some(value) => std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value),
@@ -6114,24 +6161,24 @@ mod tests {
         let root = temp_dir();
         let cwd = root.join("project");
         let config_home = root.join("config-home");
-        std::fs::create_dir_all(cwd.join(".claw")).expect("project config dir should exist");
+        std::fs::create_dir_all(cwd.join(".atlas")).expect("project config dir should exist");
         std::fs::create_dir_all(&config_home).expect("config home should exist");
         std::fs::write(
-            cwd.join(".claw").join("settings.json"),
+            cwd.join(".atlas").join("settings.json"),
             r#"{"permissionMode":"acceptEdits"}"#,
         )
         .expect("project config should write");
 
-        let original_config_home = std::env::var("CLAW_CONFIG_HOME").ok();
+        let original_config_home = std::env::var("ATLAS_CONFIG_HOME").ok();
         let original_permission_mode = std::env::var("RUSTY_CLAUDE_PERMISSION_MODE").ok();
-        std::env::set_var("CLAW_CONFIG_HOME", &config_home);
+        std::env::set_var("ATLAS_CONFIG_HOME", &config_home);
         std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", "read-only");
 
         let resolved = with_current_dir(&cwd, super::default_permission_mode);
 
         match original_config_home {
-            Some(value) => std::env::set_var("CLAW_CONFIG_HOME", value),
-            None => std::env::remove_var("CLAW_CONFIG_HOME"),
+            Some(value) => std::env::set_var("ATLAS_CONFIG_HOME", value),
+            None => std::env::remove_var("ATLAS_CONFIG_HOME"),
         }
         match original_permission_mode {
             Some(value) => std::env::set_var("RUSTY_CLAUDE_PERMISSION_MODE", value),
@@ -6412,7 +6459,7 @@ mod tests {
         let error = parse_args(&["/status".to_string()])
             .expect_err("/status should remain REPL-only when invoked directly");
         assert!(error.contains("interactive-only"));
-        assert!(error.contains("claw --resume SESSION.jsonl /status"));
+        assert!(error.contains("atlas --resume SESSION.jsonl /status"));
     }
 
     #[test]
@@ -6502,7 +6549,7 @@ mod tests {
         let error = parse_args(&["--resum".to_string()]).expect_err("unknown option should fail");
         assert!(error.contains("unknown option: --resum"));
         assert!(error.contains("Did you mean --resume?"));
-        assert!(error.contains("claw --help"));
+        assert!(error.contains("atlas --help"));
     }
 
     #[test]
@@ -6618,7 +6665,7 @@ mod tests {
         assert!(help.contains("/agents"));
         assert!(help.contains("/skills"));
         assert!(help.contains("/exit"));
-        assert!(help.contains("Auto-save            .claw/sessions/<session-id>.jsonl"));
+        assert!(help.contains("Auto-save            .atlas/sessions/<session-id>.jsonl"));
         assert!(help.contains("Resume latest        /resume latest"));
     }
 
@@ -6744,15 +6791,15 @@ mod tests {
         let mut help = Vec::new();
         print_help_to(&mut help).expect("help should render");
         let help = String::from_utf8(help).expect("help should be utf8");
-        assert!(help.contains("claw help"));
-        assert!(help.contains("claw version"));
-        assert!(help.contains("claw status"));
-        assert!(help.contains("claw sandbox"));
-        assert!(help.contains("claw init"));
-        assert!(help.contains("claw agents"));
-        assert!(help.contains("claw mcp"));
-        assert!(help.contains("claw skills"));
-        assert!(help.contains("claw /skills"));
+        assert!(help.contains("atlas help"));
+        assert!(help.contains("atlas version"));
+        assert!(help.contains("atlas status"));
+        assert!(help.contains("atlas sandbox"));
+        assert!(help.contains("atlas init"));
+        assert!(help.contains("atlas agents"));
+        assert!(help.contains("atlas mcp"));
+        assert!(help.contains("atlas skills"));
+        assert!(help.contains("atlas /skills"));
     }
 
     #[test]
@@ -7153,10 +7200,10 @@ UU conflicted.rs",
         let mut help = Vec::new();
         print_help_to(&mut help).expect("help should render");
         let help = String::from_utf8(help).expect("help should be utf8");
-        assert!(help.contains("claw --resume [SESSION.jsonl|session-id|latest]"));
+        assert!(help.contains("atlas --resume [SESSION.jsonl|session-id|latest]"));
         assert!(help.contains("Use `latest` with --resume, /resume, or /session switch"));
-        assert!(help.contains("claw --resume latest"));
-        assert!(help.contains("claw --resume latest /status /diff /export notes.txt"));
+        assert!(help.contains("atlas --resume latest"));
+        assert!(help.contains("atlas --resume latest /status /diff /export notes.txt"));
     }
 
     #[test]
@@ -7170,7 +7217,7 @@ UU conflicted.rs",
         let handle = create_managed_session_handle("session-alpha").expect("jsonl handle");
         assert!(handle.path.ends_with("session-alpha.jsonl"));
 
-        let legacy_path = workspace.join(".claw/sessions/legacy.json");
+        let legacy_path = workspace.join(".atlas/sessions/legacy.json");
         std::fs::create_dir_all(
             legacy_path
                 .parent()
@@ -7242,7 +7289,7 @@ UU conflicted.rs",
     fn resume_usage_mentions_latest_shortcut() {
         let usage = render_resume_usage();
         assert!(usage.contains("/resume <session-path|session-id|latest>"));
-        assert!(usage.contains(".claw/sessions/<session-id>.jsonl"));
+        assert!(usage.contains(".atlas/sessions/<session-id>.jsonl"));
         assert!(usage.contains("/session list"));
     }
 
@@ -7256,7 +7303,7 @@ UU conflicted.rs",
             .duration_since(std::time::UNIX_EPOCH)
             .expect("system time should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("claw-cli-{label}-{nanos}"))
+        std::env::temp_dir().join(format!("atlas-cli-{label}-{nanos}"))
     }
 
     #[test]

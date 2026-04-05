@@ -45,6 +45,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-cli"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "commands",
+ "compat-harness",
+ "crossterm",
+ "mematlas",
+ "mock-anthropic-service",
+ "plugins",
+ "pulldown-cmark",
+ "runtime",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "squad",
+ "syntect",
+ "tokio",
+ "tools",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -879,13 +901,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "memchr"
-version = "2.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
-
-[[package]]
-name = "memclaw"
+name = "mematlas"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -902,6 +918,12 @@ dependencies = [
  "thiserror 1.0.69",
  "walkdir",
 ]
+
+[[package]]
+name = "memchr"
+version = "2.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "miniz_oxide"
@@ -1475,28 +1497,6 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
-
-[[package]]
-name = "rusty-claude-cli"
-version = "0.1.0"
-dependencies = [
- "api",
- "commands",
- "compat-harness",
- "crossterm",
- "memclaw",
- "mock-anthropic-service",
- "plugins",
- "pulldown-cmark",
- "runtime",
- "rustyline",
- "serde",
- "serde_json",
- "squad",
- "syntect",
- "tokio",
- "tools",
-]
 
 [[package]]
 name = "rustyline"

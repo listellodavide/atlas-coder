@@ -1,4 +1,4 @@
-use crate::config::MemClawConfig;
+use crate::config::MemAtlasConfig;
 use crate::graph::{CodeGraph, EdgeKind, FileNode};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct Indexer {
-    config: MemClawConfig,
+    config: MemAtlasConfig,
 }
 
 struct IndexedFile {
@@ -20,7 +20,7 @@ struct IndexedFile {
 }
 
 impl Indexer {
-    pub fn new(config: MemClawConfig) -> Self {
+    pub fn new(config: MemAtlasConfig) -> Self {
         Self { config }
     }
 

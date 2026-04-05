@@ -47,7 +47,11 @@ pub struct PromptCacheEvent {
 }
 
 pub trait ApiClient {
-    fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError>;
+    fn stream(
+        &mut self,
+        request: ApiRequest,
+        abort_signal: Option<&HookAbortSignal>,
+    ) -> Result<Vec<AssistantEvent>, RuntimeError>;
 }
 
 pub trait ToolExecutor {
@@ -318,7 +322,7 @@ where
                 system_prompt: self.system_prompt.clone(),
                 messages: self.session.messages.clone(),
             };
-            let events = match self.api_client.stream(request) {
+            let events = match self.api_client.stream(request, Some(&self.hook_abort_signal)) {
                 Ok(events) => events,
                 Err(error) => {
                     self.record_turn_failed(iterations, &error);
@@ -802,7 +806,11 @@ mod tests {
     }
 
     impl ApiClient for ScriptedApiClient {
-        fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+        fn stream(
+            &mut self,
+            request: ApiRequest,
+            _abort_signal: Option<&HookAbortSignal>,
+        ) -> Result<Vec<AssistantEvent>, RuntimeError> {
             self.call_count += 1;
             match self.call_count {
                 1 => {
@@ -965,7 +973,11 @@ mod tests {
 
         struct SingleCallApiClient;
         impl ApiClient for SingleCallApiClient {
-            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            fn stream(
+                &mut self,
+                request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 if request
                     .messages
                     .iter()
@@ -1010,7 +1022,11 @@ mod tests {
     fn denies_tool_use_when_pre_tool_hook_blocks() {
         struct SingleCallApiClient;
         impl ApiClient for SingleCallApiClient {
-            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            fn stream(
+                &mut self,
+                request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 if request
                     .messages
                     .iter()
@@ -1072,7 +1088,11 @@ mod tests {
     fn denies_tool_use_when_pre_tool_hook_fails() {
         struct SingleCallApiClient;
         impl ApiClient for SingleCallApiClient {
-            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            fn stream(
+                &mut self,
+                request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 if request
                     .messages
                     .iter()
@@ -1140,7 +1160,11 @@ mod tests {
         }
 
         impl ApiClient for TwoCallApiClient {
-            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            fn stream(
+                &mut self,
+                request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 self.calls += 1;
                 match self.calls {
                     1 => Ok(vec![
@@ -1215,7 +1239,11 @@ mod tests {
         }
 
         impl ApiClient for TwoCallApiClient {
-            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            fn stream(
+                &mut self,
+                request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
+            ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 self.calls += 1;
                 match self.calls {
                     1 => Ok(vec![
@@ -1294,6 +1322,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::TextDelta("done".to_string()),
@@ -1336,6 +1365,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::TextDelta("done".to_string()),
@@ -1378,6 +1408,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::TextDelta("done".to_string()),
@@ -1463,6 +1494,7 @@ mod tests {
             fn stream(
                 &mut self,
                 _request: ApiRequest,
+                _abort_signal: Option<&HookAbortSignal>,
             ) -> Result<Vec<AssistantEvent>, RuntimeError> {
                 Ok(vec![
                     AssistantEvent::TextDelta("done".to_string()),

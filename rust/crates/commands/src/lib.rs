@@ -221,7 +221,7 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         name: "plugin",
         aliases: &["plugins", "marketplace"],
-        summary: "Manage Claw Code plugins",
+        summary: "Manage Atlas Code plugins",
         argument_hint: Some(
             "[list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]",
         ),
@@ -1068,7 +1068,7 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         resume_supported: true,
     },
     SlashCommandSpec {
-        name: "memclaw",
+        name: "mematlas",
         aliases: &[],
         summary: "Index and query codebase knowledge graph",
         argument_hint: Some("[learn [path]|search <query>|status|export]"),
@@ -1229,7 +1229,7 @@ pub enum SlashCommand {
     AddDir {
         path: Option<String>,
     },
-    MemClaw {
+    MemAtlas {
         action: Option<String>,
     },
     Unknown(String),
@@ -1520,7 +1520,7 @@ pub fn validate_slash_command_input(
         "tag" => SlashCommand::Tag { label: remainder },
         "output-style" => SlashCommand::OutputStyle { style: remainder },
         "add-dir" => SlashCommand::AddDir { path: remainder },
-        "memclaw" => SlashCommand::MemClaw { action: remainder },
+        "mematlas" => SlashCommand::MemAtlas { action: remainder },
         other => SlashCommand::Unknown(other.to_string()),
     }))
 }
@@ -3148,7 +3148,7 @@ fn render_agents_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "Agents".to_string(),
         "  Usage            /agents [list|help]".to_string(),
-        "  Direct CLI       claw agents".to_string(),
+        "  Direct CLI       atlas agents".to_string(),
         "  Sources          .codex/agents, .claude/agents, $CODEX_HOME/agents".to_string(),
     ];
     if let Some(args) = unexpected {
@@ -3161,7 +3161,7 @@ fn render_skills_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "Skills".to_string(),
         "  Usage            /skills [list|install <path>|help]".to_string(),
-        "  Direct CLI       claw skills [list|install <path>|help]".to_string(),
+        "  Direct CLI       atlas skills [list|install <path>|help]".to_string(),
         "  Install root     $CODEX_HOME/skills or ~/.codex/skills".to_string(),
         "  Sources          .codex/skills, .claude/skills, legacy /commands".to_string(),
     ];
@@ -3175,8 +3175,8 @@ fn render_mcp_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "MCP".to_string(),
         "  Usage            /mcp [list|show <server>|help]".to_string(),
-        "  Direct CLI       claw mcp [list|show <server>|help]".to_string(),
-        "  Sources          .claw/settings.json, .claw/settings.local.json".to_string(),
+        "  Direct CLI       atlas mcp [list|show <server>|help]".to_string(),
+        "  Sources          .atlas/settings.json, .atlas/settings.local.json".to_string(),
     ];
     if let Some(args) = unexpected {
         lines.push(format!("  Unexpected       {args}"));
@@ -3365,7 +3365,7 @@ pub fn handle_slash_command(
         | SlashCommand::Tag { .. }
         | SlashCommand::OutputStyle { .. }
         | SlashCommand::AddDir { .. }
-        | SlashCommand::MemClaw { .. }
+        | SlashCommand::MemAtlas { .. }
         | SlashCommand::Restore { .. }
         | SlashCommand::Unknown(_) => None,
     }
@@ -3694,38 +3694,38 @@ mod tests {
     }
 
     #[test]
-    fn memclaw_parses_subcommands() {
+    fn mematlas_parses_subcommands() {
         assert_eq!(
-            SlashCommand::parse("/memclaw"),
-            Ok(Some(SlashCommand::MemClaw { action: None }))
+            SlashCommand::parse("/mematlas"),
+            Ok(Some(SlashCommand::MemAtlas { action: None }))
         );
         assert_eq!(
-            SlashCommand::parse("/memclaw learn"),
-            Ok(Some(SlashCommand::MemClaw {
+            SlashCommand::parse("/mematlas learn"),
+            Ok(Some(SlashCommand::MemAtlas {
                 action: Some("learn".to_string())
             }))
         );
         assert_eq!(
-            SlashCommand::parse("/memclaw learn /path/to/repo"),
-            Ok(Some(SlashCommand::MemClaw {
+            SlashCommand::parse("/mematlas learn /path/to/repo"),
+            Ok(Some(SlashCommand::MemAtlas {
                 action: Some("learn /path/to/repo".to_string())
             }))
         );
         assert_eq!(
-            SlashCommand::parse("/memclaw search payment flow"),
-            Ok(Some(SlashCommand::MemClaw {
+            SlashCommand::parse("/mematlas search payment flow"),
+            Ok(Some(SlashCommand::MemAtlas {
                 action: Some("search payment flow".to_string())
             }))
         );
         assert_eq!(
-            SlashCommand::parse("/memclaw status"),
-            Ok(Some(SlashCommand::MemClaw {
+            SlashCommand::parse("/mematlas status"),
+            Ok(Some(SlashCommand::MemAtlas {
                 action: Some("status".to_string())
             }))
         );
         assert_eq!(
-            SlashCommand::parse("/memclaw export"),
-            Ok(Some(SlashCommand::MemClaw {
+            SlashCommand::parse("/mematlas export"),
+            Ok(Some(SlashCommand::MemAtlas {
                 action: Some("export".to_string())
             }))
         );
@@ -3934,7 +3934,7 @@ mod tests {
 
         // then
         assert!(help.contains("/plugin"));
-        assert!(help.contains("Summary          Manage Claw Code plugins"));
+        assert!(help.contains("Summary          Manage Atlas Code plugins"));
         assert!(help.contains("Aliases          /plugins, /marketplace"));
         assert!(help.contains("Category         Workspace & git"));
     }
@@ -4226,7 +4226,7 @@ mod tests {
         let agents_help =
             super::handle_agents_slash_command(Some("help"), &cwd).expect("agents help");
         assert!(agents_help.contains("Usage            /agents [list|help]"));
-        assert!(agents_help.contains("Direct CLI       claw agents"));
+        assert!(agents_help.contains("Direct CLI       atlas agents"));
 
         let agents_unexpected =
             super::handle_agents_slash_command(Some("show planner"), &cwd).expect("agents usage");
@@ -4251,7 +4251,7 @@ mod tests {
 
         let help = super::handle_mcp_slash_command(Some("help"), &cwd).expect("mcp help");
         assert!(help.contains("Usage            /mcp [list|show <server>|help]"));
-        assert!(help.contains("Direct CLI       claw mcp [list|show <server>|help]"));
+        assert!(help.contains("Direct CLI       atlas mcp [list|show <server>|help]"));
 
         let unexpected =
             super::handle_mcp_slash_command(Some("show alpha beta"), &cwd).expect("mcp usage");
@@ -4264,10 +4264,10 @@ mod tests {
     fn renders_mcp_reports_from_loaded_config() {
         let workspace = temp_dir("mcp-config-workspace");
         let config_home = temp_dir("mcp-config-home");
-        fs::create_dir_all(workspace.join(".claw")).expect("workspace config dir");
+        fs::create_dir_all(workspace.join(".atlas")).expect("workspace config dir");
         fs::create_dir_all(&config_home).expect("config home");
         fs::write(
-            workspace.join(".claw").join("settings.json"),
+            workspace.join(".atlas").join("settings.json"),
             r#"{
               "mcpServers": {
                 "alpha": {
@@ -4291,7 +4291,7 @@ mod tests {
         )
         .expect("write settings");
         fs::write(
-            workspace.join(".claw").join("settings.local.json"),
+            workspace.join(".atlas").join("settings.local.json"),
             r#"{
               "mcpServers": {
                 "remote": {

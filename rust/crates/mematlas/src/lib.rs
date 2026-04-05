@@ -1,17 +1,17 @@
 pub mod config;
 pub mod graph;
 pub mod indexer;
-pub mod memclaw;
+pub mod mematlas;
 pub mod query;
 
-pub use config::MemClawConfig;
-pub use memclaw::{LearnResult, MemClaw, MemClawStatus};
+pub use config::MemAtlasConfig;
+pub use mematlas::{LearnResult, MemAtlas, MemAtlasStatus};
 pub use query::SearchResult;
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum MemClawError {
+pub enum MemAtlasError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Database error: {0}")]

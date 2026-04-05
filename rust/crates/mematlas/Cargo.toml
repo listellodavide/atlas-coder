@@ -1,10 +1,10 @@
 [package]
-name = "memclaw"
+name = "mematlas"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "MemClaw — codebase cognition layer for the claw CLI"
+description = "MemAtlas — codebase cognition layer for the atlas CLI"
 
 [dependencies]
 walkdir = "2"

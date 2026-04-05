@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-/// Configuration for a MemClaw instance.
+/// Configuration for a MemAtlas instance.
 #[derive(Debug, Clone)]
-pub struct MemClawConfig {
+pub struct MemAtlasConfig {
     /// Directory used to persist the index (one sub-dir per project).
     pub index_dir: PathBuf,
     /// Skip files larger than this byte limit (default: 256 KB).
@@ -13,8 +13,8 @@ pub struct MemClawConfig {
     pub ignore_patterns: Vec<String>,
 }
 
-impl MemClawConfig {
-    /// Returns sane defaults whose index lives under `~/.local/share/memclaw`.
+impl MemAtlasConfig {
+    /// Returns sane defaults whose index lives under `~/.local/share/mematlas`.
     #[must_use]
     pub fn default_for(project_root: &Path) -> Self {
         let base = dirs_base(project_root);
@@ -42,14 +42,14 @@ fn dirs_base(project_root: &Path) -> PathBuf {
     let short = &hash[..12];
 
     if let Ok(data) = std::env::var("XDG_DATA_HOME") {
-        return PathBuf::from(data).join("memclaw").join(short);
+        return PathBuf::from(data).join("mematlas").join(short);
     }
     if let Ok(home) = std::env::var("HOME") {
         return PathBuf::from(home)
-            .join(".local/share/memclaw")
+            .join(".local/share/mematlas")
             .join(short);
     }
-    std::env::temp_dir().join("memclaw").join(short)
+    std::env::temp_dir().join("mematlas").join(short)
 }
 
 fn default_extensions() -> Vec<String> {

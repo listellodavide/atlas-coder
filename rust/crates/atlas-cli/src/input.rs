@@ -149,17 +149,12 @@ impl LineEditor {
         match self.editor.readline(&self.prompt) {
             Ok(line) => Ok(ReadOutcome::Submit(line)),
             Err(ReadlineError::Interrupted) => {
-                let has_input = !self.current_line().is_empty();
-                self.finish_interrupted_read()?;
-                if has_input {
-                    Ok(ReadOutcome::Cancel)
-                } else {
-                    Ok(ReadOutcome::Exit)
-                }
+                let _ = self.finish_interrupted_read();
+                Ok(ReadOutcome::Cancel)
             }
             Err(ReadlineError::Eof) => {
-                self.finish_interrupted_read()?;
-                Ok(ReadOutcome::Exit)
+                let _ = self.finish_interrupted_read();
+                Ok(ReadOutcome::Cancel)
             }
             Err(error) => Err(io::Error::other(error)),
         }

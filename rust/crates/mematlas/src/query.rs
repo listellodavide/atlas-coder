@@ -66,7 +66,7 @@ impl<'a> QueryEngine<'a> {
 
     pub fn export(&self) -> String {
         let mut output = String::new();
-        output.push_str("# MemClaw Knowledge Graph Export\n\n");
+        output.push_str("# MemAtlas Knowledge Graph Export\n\n");
         output.push_str(&format!("- **Total Files:** {}\n", self.graph.node_count()));
         output.push_str(&format!("- **Total Edges:** {}\n\n", self.graph.edge_count()));
         

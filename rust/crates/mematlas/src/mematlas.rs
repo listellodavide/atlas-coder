@@ -1,4 +1,4 @@
-use crate::config::MemClawConfig;
+use crate::config::MemAtlasConfig;
 use crate::graph::CodeGraph;
 use crate::indexer::Indexer;
 use crate::query::{QueryEngine, SearchResult};
@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 
-pub struct MemClaw {
-    config: MemClawConfig,
+pub struct MemAtlas {
+    config: MemAtlasConfig,
     graph: CodeGraph,
     db: sled::Db,
 }
@@ -20,14 +20,14 @@ pub struct LearnResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MemClawStatus {
+pub struct MemAtlasStatus {
     pub files_indexed: usize,
     pub edges_created: usize,
     pub last_indexed: Option<DateTime<Utc>>,
 }
 
-impl MemClaw {
-    pub fn new(config: MemClawConfig) -> Result<Self> {
+impl MemAtlas {
+    pub fn new(config: MemAtlasConfig) -> Result<Self> {
         let db = sled::open(config.db_path())?;
         let graph = if let Some(bytes) = db.get("graph")? {
             CodeGraph::deserialize(&bytes).unwrap_or_else(|_| CodeGraph::new())
@@ -63,13 +63,13 @@ impl MemClaw {
         Ok(engine.context_slice_for(task, 2))
     }
 
-    pub fn status(&self) -> MemClawStatus {
+    pub fn status(&self) -> MemAtlasStatus {
         let last_indexed = self.db.get("last_indexed").ok().flatten()
             .and_then(|b| String::from_utf8(b.to_vec()).ok())
             .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
-        MemClawStatus {
+        MemAtlasStatus {
             files_indexed: self.graph.node_count(),
             edges_created: self.graph.edge_count(),
             last_indexed,
