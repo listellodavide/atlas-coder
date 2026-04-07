@@ -1993,6 +1993,70 @@ fn mcp_annotation_flag(tool: &McpTool, key: &str) -> bool {
 
 // Removed HookAbortMonitor in favor of global signal handling.
 
+fn format_tools_status(allowed_tools: &Option<AllowedToolSet>) -> String {
+    // Default active tools - those that are enabled by default (from deferred_tool_specs)
+    // These are tools NOT in the basic set: bash, read_file, write_file, edit_file, glob_search, grep_search
+    let default_active_tools = vec![
+        "WebSearch", "WebFetch", "TodoWrite", "Skill", "Agent", "ToolSearch",
+        "NotebookEdit", "Sleep", "SendUserMessage", "Config", "StructuredOutput", "REPL", "PowerShell"
+    ];
+
+    // If no specific tools are allowed, all default tools are active
+    // If tools are restricted, only show the ones in the allowed set
+    match allowed_tools {
+        None => {
+            // All default tools are active
+            let active_tools: Vec<&str> = default_active_tools.iter().copied().collect();
+            format_tool_list(&active_tools, &[], &[])
+        }
+        Some(allowed_set) => {
+            let mut active = Vec::new();
+            let mut default_but_disabled = Vec::new();
+
+            for tool in &default_active_tools {
+                if allowed_set.contains(*tool) {
+                    active.push(*tool);
+                } else {
+                    default_but_disabled.push(*tool);
+                }
+            }
+
+            format_tool_list(&active, &default_but_disabled, &[])
+        }
+    }
+}
+
+fn format_tool_list(active: &[&str], disabled: &[&str], _other: &[&str]) -> String {
+    // Format: Active tools in green, disabled tools in grey
+    let mut result = String::new();
+
+    // Add active tools in green
+    if !active.is_empty() {
+        if !result.is_empty() {
+            result.push_str(", ");
+        }
+        result.push_str("\x1b[38;5;82m");
+        result.push_str(&active.join(", "));
+        result.push_str("\x1b[0m");
+    }
+
+    // Add disabled tools in grey (dim)
+    if !disabled.is_empty() {
+        if !result.is_empty() {
+            result.push_str(", ");
+        }
+        result.push_str("\x1b[2m");
+        result.push_str(&disabled.join(", "));
+        result.push_str("\x1b[0m");
+    }
+
+    if result.is_empty() {
+        "none".to_string()
+    } else {
+        result
+    }
+}
+
 impl LiveCli {
     fn new(
         model: String,
@@ -2045,7 +2109,7 @@ impl LiveCli {
             |_| self.session.path.display().to_string(),
             |path| path.display().to_string(),
         );
-
+        let tools_status = format_tools_status(&self.allowed_tools);
         format!(
             "\x1b[38;5;196m\
   _______  _______  ___      _______  _______\n\
@@ -2055,14 +2119,15 @@ impl LiveCli {
 |       |  |   |  |   |___ |       ||_____  |\n\
 |   _   |  |   |  |       ||   _   | _____| |\n\
 |__| |__|  |___|  |_______||__| |__||_______|\x1b[0m \x1b[38;5;208mCode\x1b[0m 🦞\n\n\
-  \x1b[2mModel\x1b[0m            {}\n\
-  \x1b[2mPermissions\x1b[0m      {}\n\
-  \x1b[2mBranch\x1b[0m           {}\n\
-  \x1b[2mWorkspace\x1b[0m        {}\n\
-  \x1b[2mDirectory\x1b[0m        {}\n\
-  \x1b[2mSession\x1b[0m          {}\n\
-  \x1b[2mAuto-save\x1b[0m        {}\n\n\
-  Type \x1b[1m/help\x1b[0m for commands · \x1b[1m/status\x1b[0m for live context · \x1b[2m/resume latest\x1b[0m jumps back to the newest session · \x1b[1m/diff\x1b[0m then \x1b[1m/commit\x1b[0m to ship · \x1b[2mTab\x1b[0m for workflow completions · \x1b[2mAlt+Enter / Ctrl+O\x1b[0m for newline",
+   \x1b[2mModel\x1b[0m            {}\n\
+   \x1b[2mPermissions\x1b[0m      {}\n\
+   \x1b[2mBranch\x1b[0m           {}\n\
+   \x1b[2mWorkspace\x1b[0m        {}\n\
+   \x1b[2mDirectory\x1b[0m        {}\n\
+   \x1b[2mSession\x1b[0m          {}\n\
+   \x1b[2mAuto-save\x1b[0m        {}\n\
+   \x1b[2mTools\x1b[0m            {}\n\n\
+   Type \x1b[1m/help\x1b[0m for commands · \x1b[1m/status\x1b[0m for live context · \x1b[2m/resume latest\x1b[0m jumps back to the newest session · \x1b[1m/diff\x1b[0m then \x1b[1m/commit\x1b[0m to ship · \x1b[2mTab\x1b[0m for workflow completions · \x1b[2mAlt+Enter / Ctrl+O\x1b[0m for newline",
             self.model,
             self.permission_mode.as_str(),
             git_branch,
@@ -2070,6 +2135,7 @@ impl LiveCli {
             cwd,
             self.session.id,
             session_path,
+            tools_status,
         )
     }
 
