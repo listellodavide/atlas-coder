@@ -1,0 +1,2 @@
+{"created_at_ms":1775553310810,"model":"ollama/hf.co/unsloth/Qwen3-Coder-Next-GGUF:IQ1_M","session_id":"session-1775553310810-0","type":"session_meta","updated_at_ms":1775553310810,"version":1}
+{"message":{"blocks":[{"text":"hello","type":"text"}],"role":"user"},"type":"message"}

@@ -1476,7 +1476,7 @@ fn run_resume_command(
         | SlashCommand::Plugins { .. }
         | SlashCommand::Doctor
         | SlashCommand::Rlm { .. }
-        | SlashCommand::Login
+        | SlashCommand::Login { .. }
         | SlashCommand::Ollama { .. }
         | SlashCommand::Logout
         | SlashCommand::Vim
@@ -1518,6 +1518,8 @@ fn run_resume_command(
         | SlashCommand::AddDir { .. }
         | SlashCommand::MemAtlas { .. }
         | SlashCommand::Restore { .. }
+        | SlashCommand::Gemini { .. }
+        | SlashCommand::Claude { .. }
         | SlashCommand::Squad { .. } => Err("unsupported resumed slash command".into()),
     }
 }
@@ -1997,7 +1999,7 @@ fn format_tools_status(allowed_tools: &Option<AllowedToolSet>) -> String {
     // Default active tools - those that are enabled by default (from deferred_tool_specs)
     // These are tools NOT in the basic set: bash, read_file, write_file, edit_file, glob_search, grep_search
     let default_active_tools = vec![
-        "WebSearch", "WebFetch", "TodoWrite", "Skill", "Agent", "ToolSearch",
+        "WebSearch", "WebFetch", "WebDynamic", "TodoWrite", "Skill", "Agent", "ToolSearch",
         "NotebookEdit", "Sleep", "SendUserMessage", "Config", "StructuredOutput", "REPL", "PowerShell"
     ];
 
@@ -2396,6 +2398,26 @@ impl LiveCli {
                 }
                 true
             }
+            SlashCommand::Gemini { model } => {
+                if let Some(m) = model {
+                    let gemini_model = format!("gemini/{m}");
+                    self.set_model(Some(gemini_model))?;
+                } else {
+                    println!("Please specify a Gemini model. (Hint: see https://ai.google.dev/gemini-api/docs/models) \nExample: /gemini gemini-2.0-flash");
+                    return Ok(false);
+                }
+                true
+            }
+            SlashCommand::Claude { model } => {
+                if let Some(m) = model {
+                    let claude_model = format!("claude/{m}");
+                    self.set_model(Some(claude_model))?;
+                } else {
+                    println!("Please specify a Claude model.\nExample: /claude claude-3-5-sonnet-20241022");
+                    return Ok(false);
+                }
+                true
+            }
             SlashCommand::Rlm { task } => {
                 self.run_rlm(&task)?;
                 false
@@ -2404,9 +2426,15 @@ impl LiveCli {
                 self.run_squad(&task)?;
                 false
             }
+            SlashCommand::Login { provider } => {
+                self.handle_login(provider.as_deref());
+                false
+            }
+            SlashCommand::Logout => {
+                self.handle_logout();
+                false
+            }
             SlashCommand::Doctor
-            | SlashCommand::Login
-            | SlashCommand::Logout
             | SlashCommand::Vim
             | SlashCommand::Upgrade
             | SlashCommand::Stats
@@ -2488,6 +2516,112 @@ impl LiveCli {
             "{}",
             format_sandbox_report(&resolve_sandbox_status(runtime_config.sandbox(), &cwd))
         );
+    }
+
+    fn handle_login(&self, provider: Option<&str>) {
+        use std::io::{self, Write};
+
+        match provider {
+            Some("gemini") => {
+                println!("\n🔐 Google Gemini API Key Login\n");
+                println!("To use Atlas AI with Gemini models, you need to authenticate with your Google API key.");
+                println!("Get your API key from: https://ai.google.dev/\n");
+
+                print!("Enter your Gemini API key: ");
+                io::stdout().flush().ok();
+
+                let mut api_key = String::new();
+                match io::stdin().read_line(&mut api_key) {
+                    Ok(_) => {
+                        api_key = api_key.trim().to_string();
+
+                        if api_key.is_empty() {
+                            eprintln!("❌ API key cannot be empty.");
+                            return;
+                        }
+
+                        // Set the environment variable for this session
+                        env::set_var("GEMINI_API_KEY", &api_key);
+
+                        println!("\n✅ Gemini API key saved for this session!");
+                        println!("   Key starts with: {}...", &api_key[..20.min(api_key.len())]);
+                        println!("\n💡 To use this key permanently:");
+                        println!("   1. Set the environment variable: export GEMINI_API_KEY='your-key'");
+                        println!("   2. Add to ~/.bashrc or ~/.zshrc for persistence");
+                        println!("   3. Or create a .env file: echo 'GEMINI_API_KEY=your-key' > .env\n");
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Failed to read input: {}", e);
+                    }
+                }
+            }
+            Some("anthropic") | Some("claude") | None => {
+                // Default to Anthropic/Claude if no provider specified or if explicitly requesting anthropic
+                println!("\n🔐 Anthropic API Key Login\n");
+                println!("To use Atlas AI with Claude models, you need to authenticate with your Anthropic API key.");
+                println!("Get your API key from: https://console.anthropic.com/\n");
+
+                print!("Enter your Anthropic API key: ");
+                io::stdout().flush().ok();
+
+                let mut api_key = String::new();
+                match io::stdin().read_line(&mut api_key) {
+                    Ok(_) => {
+                        api_key = api_key.trim().to_string();
+
+                        if api_key.is_empty() {
+                            eprintln!("❌ API key cannot be empty.");
+                            return;
+                        }
+
+                        if !api_key.starts_with("sk-ant-") {
+                            eprintln!("⚠️  Warning: API key doesn't match expected format (sk-ant-...)");
+                            eprintln!("   Make sure you copied the entire key correctly.");
+                        }
+
+                        // Set the environment variable for this session
+                        env::set_var("ANTHROPIC_API_KEY", &api_key);
+
+                        println!("\n✅ Anthropic API key saved for this session!");
+                        println!("   Key starts with: {}...", &api_key[..20.min(api_key.len())]);
+                        println!("\n💡 To use this key permanently:");
+                        println!("   1. Set the environment variable: export ANTHROPIC_API_KEY='your-key'");
+                        println!("   2. Add to ~/.bashrc or ~/.zshrc for persistence");
+                        println!("   3. Or create a .env file: echo 'ANTHROPIC_API_KEY=your-key' > .env\n");
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Failed to read input: {}", e);
+                    }
+                }
+            }
+            Some(unknown_provider) => {
+                eprintln!("❌ Unknown provider: {}", unknown_provider);
+                println!("\nSupported providers: anthropic (or claude), gemini");
+                println!("\nUsage examples:");
+                println!("  /login                  - Login to Anthropic (default)");
+                println!("  /login anthropic        - Login to Anthropic");
+                println!("  /login claude           - Login to Anthropic");
+                println!("  /login gemini           - Login to Google Gemini\n");
+            }
+        }
+    }
+
+    fn handle_logout(&self) {
+        println!("\n🔐 Anthropic API Key Logout\n");
+
+        // Check if an API key is currently set
+        if env::var("ANTHROPIC_API_KEY").is_ok() {
+            // Remove the environment variable for this session
+            env::remove_var("ANTHROPIC_API_KEY");
+            println!("✅ API key cleared for this session!");
+            println!("   You are now logged out of the Anthropic API.\n");
+            println!("💡 To log back in, use the /login command:");
+            println!("   > /login\n");
+        } else {
+            println!("ℹ️  You are not currently logged in.");
+            println!("   To log in, use the /login command:");
+            println!("   > /login\n");
+        }
     }
 
     fn run_rlm(&mut self, task: &str) -> Result<(), Box<dyn std::error::Error>> {

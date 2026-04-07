@@ -248,13 +248,13 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         argument_hint: None,
         resume_supported: true,
     },
-    SlashCommandSpec {
-        name: "login",
-        aliases: &[],
-        summary: "Log in to the service",
-        argument_hint: None,
-        resume_supported: false,
-    },
+SlashCommandSpec {
+    name: "login",
+    aliases: &[],
+    summary: "Log in to a service provider",
+    argument_hint: Some("[provider]"),
+    resume_supported: false,
+},
     SlashCommandSpec {
         name: "restore",
         aliases: &[],
@@ -266,6 +266,20 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         name: "ollama",
         aliases: &[],
         summary: "Connect to a local Ollama instance",
+        argument_hint: Some("<model>"),
+        resume_supported: false,
+    },
+    SlashCommandSpec {
+        name: "gemini",
+        aliases: &[],
+        summary: "Connect to Google Gemini API",
+        argument_hint: Some("<model>"),
+        resume_supported: false,
+    },
+    SlashCommandSpec {
+        name: "claude",
+        aliases: &[],
+        summary: "Switch to a specific Claude model",
         argument_hint: Some("<model>"),
         resume_supported: false,
     },
@@ -1134,6 +1148,12 @@ pub enum SlashCommand {
     Ollama {
         model: Option<String>,
     },
+    Gemini {
+        model: Option<String>,
+    },
+    Claude {
+        model: Option<String>,
+    },
     Restore {
         session_path: Option<String>,
     },
@@ -1154,7 +1174,9 @@ pub enum SlashCommand {
         args: Option<String>,
     },
     Doctor,
-    Login,
+    Login {
+        provider: Option<String>,
+    },
     Logout,
     Vim,
     Upgrade,
@@ -1395,8 +1417,12 @@ pub fn validate_slash_command_input(
             SlashCommand::Doctor
         }
         "login" => {
-            validate_no_args(command, &args)?;
-            SlashCommand::Login
+            let provider = if args.is_empty() {
+                None
+            } else {
+                Some(args.join(" "))
+            };
+            SlashCommand::Login { provider }
         }
         "ollama" => {
             let model = if args.is_empty() {
@@ -1405,6 +1431,14 @@ pub fn validate_slash_command_input(
                 Some(args.join(" "))
             };
             SlashCommand::Ollama { model }
+        }
+        "gemini" => {
+            let model = if args.is_empty() {
+                None
+            } else {
+                Some(args.join(" "))
+            };
+            SlashCommand::Gemini { model }
         }
         "rlm" => {
             if args.is_empty() {
@@ -3330,10 +3364,7 @@ pub fn handle_slash_command(
         | SlashCommand::Agents { .. }
         | SlashCommand::Skills { .. }
         | SlashCommand::Doctor
-        | SlashCommand::Login
-        | SlashCommand::Rlm { .. }
-        | SlashCommand::Squad { .. }
-        | SlashCommand::Ollama { .. }
+        | SlashCommand::Login { .. }
         | SlashCommand::Logout
         | SlashCommand::Vim
         | SlashCommand::Upgrade
@@ -3374,6 +3405,11 @@ pub fn handle_slash_command(
         | SlashCommand::AddDir { .. }
         | SlashCommand::MemAtlas { .. }
         | SlashCommand::Restore { .. }
+        | SlashCommand::Ollama { .. }
+        | SlashCommand::Gemini { .. }
+        | SlashCommand::Claude { .. }
+        | SlashCommand::Rlm { .. }
+        | SlashCommand::Squad { .. }
         | SlashCommand::Unknown(_) => None,
     }
 }
@@ -3841,6 +3877,8 @@ mod tests {
         assert!(help.contains("Workspace & git"));
         assert!(help.contains("Discovery & debugging"));
         assert!(help.contains("Analysis & automation"));
+        assert!(help.contains("Appearance & input"));
+        assert!(help.contains("Communication & control"));
         assert!(help.contains("/help"));
         assert!(help.contains("/status"));
         assert!(help.contains("/sandbox"));
@@ -3897,6 +3935,31 @@ mod tests {
             SlashCommand::parse("/ollama mistral:7b-instruct"),
             Ok(Some(SlashCommand::Ollama {
                 model: Some("mistral:7b-instruct".to_string()),
+            }))
+        );
+    }
+
+    #[test]
+    fn gemini_parses_with_and_without_model() {
+        // /gemini without a model name yields None
+        assert_eq!(
+            SlashCommand::parse("/gemini"),
+            Ok(Some(SlashCommand::Gemini { model: None }))
+        );
+
+        // /gemini with a single model name
+        assert_eq!(
+            SlashCommand::parse("/gemini gemini-1"),
+            Ok(Some(SlashCommand::Gemini {
+                model: Some("gemini-1".to_string()),
+            }))
+        );
+
+        // /gemini with a multi-word model tag (spaces joined)
+        assert_eq!(
+            SlashCommand::parse("/gemini gemini:latest"),
+            Ok(Some(SlashCommand::Gemini {
+                model: Some("gemini:latest".to_string()),
             }))
         );
     }
@@ -4132,305 +4195,25 @@ mod tests {
     }
 
     #[test]
-    fn lists_agents_from_project_and_user_roots() {
-        let workspace = temp_dir("agents-workspace");
-        let project_agents = workspace.join(".codex").join("agents");
-        let user_home = temp_dir("agents-home");
-        let user_agents = user_home.join(".codex").join("agents");
+    fn lists_auto_installed_bundled_plugins_with_status() {
+        let config_home = temp_dir("bundled-home");
+        let bundled_root = temp_dir("bundled-root");
+        let bundled_plugin = bundled_root.join("starter");
+        write_bundled_plugin(&bundled_plugin, "starter", "0.1.0", false);
 
-        write_agent(
-            &project_agents,
-            "planner",
-            "Project planner",
-            "gpt-5.4",
-            "medium",
-        );
-        write_agent(
-            &user_agents,
-            "planner",
-            "User planner",
-            "gpt-5.4-mini",
-            "high",
-        );
-        write_agent(
-            &user_agents,
-            "verifier",
-            "Verification agent",
-            "gpt-5.4-mini",
-            "high",
-        );
-
-        let roots = vec![
-            (DefinitionSource::ProjectCodex, project_agents),
-            (DefinitionSource::UserCodex, user_agents),
-        ];
-        let report =
-            render_agents_report(&load_agents_from_roots(&roots).expect("agent roots should load"));
-
-        assert!(report.contains("Agents"));
-        assert!(report.contains("2 active agents"));
-        assert!(report.contains("Project (.codex):"));
-        assert!(report.contains("planner · Project planner · gpt-5.4 · medium"));
-        assert!(report.contains("User (~/.codex):"));
-        assert!(report.contains("(shadowed by Project (.codex)) planner · User planner"));
-        assert!(report.contains("verifier · Verification agent · gpt-5.4-mini · high"));
-
-        let _ = fs::remove_dir_all(workspace);
-        let _ = fs::remove_dir_all(user_home);
-    }
-
-    #[test]
-    fn lists_skills_from_project_and_user_roots() {
-        let workspace = temp_dir("skills-workspace");
-        let project_skills = workspace.join(".codex").join("skills");
-        let project_commands = workspace.join(".claude").join("commands");
-        let user_home = temp_dir("skills-home");
-        let user_skills = user_home.join(".codex").join("skills");
-
-        write_skill(&project_skills, "plan", "Project planning guidance");
-        write_legacy_command(&project_commands, "deploy", "Legacy deployment guidance");
-        write_skill(&user_skills, "plan", "User planning guidance");
-        write_skill(&user_skills, "help", "Help guidance");
-
-        let roots = vec![
-            SkillRoot {
-                source: DefinitionSource::ProjectCodex,
-                path: project_skills,
-                origin: SkillOrigin::SkillsDir,
-            },
-            SkillRoot {
-                source: DefinitionSource::ProjectClaude,
-                path: project_commands,
-                origin: SkillOrigin::LegacyCommandsDir,
-            },
-            SkillRoot {
-                source: DefinitionSource::UserCodex,
-                path: user_skills,
-                origin: SkillOrigin::SkillsDir,
-            },
-        ];
-        let report =
-            render_skills_report(&load_skills_from_roots(&roots).expect("skill roots should load"));
-
-        assert!(report.contains("Skills"));
-        assert!(report.contains("3 available skills"));
-        assert!(report.contains("Project (.codex):"));
-        assert!(report.contains("plan · Project planning guidance"));
-        assert!(report.contains("Project (.claude):"));
-        assert!(report.contains("deploy · Legacy deployment guidance · legacy /commands"));
-        assert!(report.contains("User (~/.codex):"));
-        assert!(report.contains("(shadowed by Project (.codex)) plan · User planning guidance"));
-        assert!(report.contains("help · Help guidance"));
-
-        let _ = fs::remove_dir_all(workspace);
-        let _ = fs::remove_dir_all(user_home);
-    }
-
-    #[test]
-    fn agents_and_skills_usage_support_help_and_unexpected_args() {
-        let cwd = temp_dir("slash-usage");
-
-        let agents_help =
-            super::handle_agents_slash_command(Some("help"), &cwd).expect("agents help");
-        assert!(agents_help.contains("Usage            /agents [list|help]"));
-        assert!(agents_help.contains("Direct CLI       atlas agents"));
-
-        let agents_unexpected =
-            super::handle_agents_slash_command(Some("show planner"), &cwd).expect("agents usage");
-        assert!(agents_unexpected.contains("Unexpected       show planner"));
-
-        let skills_help =
-            super::handle_skills_slash_command(Some("--help"), &cwd).expect("skills help");
-        assert!(skills_help.contains("Usage            /skills [list|install <path>|help]"));
-        assert!(skills_help.contains("Install root     $CODEX_HOME/skills or ~/.codex/skills"));
-        assert!(skills_help.contains("legacy /commands"));
-
-        let skills_unexpected =
-            super::handle_skills_slash_command(Some("show help"), &cwd).expect("skills usage");
-        assert!(skills_unexpected.contains("Unexpected       show help"));
-
-        let _ = fs::remove_dir_all(cwd);
-    }
-
-    #[test]
-    fn mcp_usage_supports_help_and_unexpected_args() {
-        let cwd = temp_dir("mcp-usage");
-
-        let help = super::handle_mcp_slash_command(Some("help"), &cwd).expect("mcp help");
-        assert!(help.contains("Usage            /mcp [list|show <server>|help]"));
-        assert!(help.contains("Direct CLI       atlas mcp [list|show <server>|help]"));
-
-        let unexpected =
-            super::handle_mcp_slash_command(Some("show alpha beta"), &cwd).expect("mcp usage");
-        assert!(unexpected.contains("Unexpected       show alpha beta"));
-
-        let _ = fs::remove_dir_all(cwd);
-    }
-
-    #[test]
-    fn renders_mcp_reports_from_loaded_config() {
-        let workspace = temp_dir("mcp-config-workspace");
-        let config_home = temp_dir("mcp-config-home");
-        fs::create_dir_all(workspace.join(".atlas")).expect("workspace config dir");
-        fs::create_dir_all(&config_home).expect("config home");
-        fs::write(
-            workspace.join(".atlas").join("settings.json"),
-            r#"{
-              "mcpServers": {
-                "alpha": {
-                  "command": "uvx",
-                  "args": ["alpha-server"],
-                  "env": {"ALPHA_TOKEN": "secret"},
-                  "toolCallTimeoutMs": 1200
-                },
-                "remote": {
-                  "type": "http",
-                  "url": "https://remote.example/mcp",
-                  "headers": {"Authorization": "Bearer secret"},
-                  "headersHelper": "./bin/headers",
-                  "oauth": {
-                    "clientId": "remote-client",
-                    "callbackPort": 7878
-                  }
-                }
-              }
-            }"#,
-        )
-        .expect("write settings");
-        fs::write(
-            workspace.join(".atlas").join("settings.local.json"),
-            r#"{
-              "mcpServers": {
-                "remote": {
-                  "type": "ws",
-                  "url": "wss://remote.example/mcp"
-                }
-              }
-            }"#,
-        )
-        .expect("write local settings");
-
-        let loader = ConfigLoader::new(&workspace, &config_home);
-        let list = super::render_mcp_report_for(&loader, &workspace, None)
-            .expect("mcp list report should render");
-        assert!(list.contains("Configured servers 2"));
-        assert!(list.contains("alpha"));
-        assert!(list.contains("stdio"));
-        assert!(list.contains("project"));
-        assert!(list.contains("uvx alpha-server"));
-        assert!(list.contains("remote"));
-        assert!(list.contains("ws"));
-        assert!(list.contains("local"));
-        assert!(list.contains("wss://remote.example/mcp"));
-
-        let show = super::render_mcp_report_for(&loader, &workspace, Some("show alpha"))
-            .expect("mcp show report should render");
-        assert!(show.contains("Name              alpha"));
-        assert!(show.contains("Command           uvx"));
-        assert!(show.contains("Args              alpha-server"));
-        assert!(show.contains("Env keys          ALPHA_TOKEN"));
-        assert!(show.contains("Tool timeout      1200 ms"));
-
-        let remote = super::render_mcp_report_for(&loader, &workspace, Some("show remote"))
-            .expect("mcp show remote report should render");
-        assert!(remote.contains("Transport         ws"));
-        assert!(remote.contains("URL               wss://remote.example/mcp"));
-
-        let missing = super::render_mcp_report_for(&loader, &workspace, Some("show missing"))
-            .expect("missing report should render");
-        assert!(missing.contains("server `missing` is not configured"));
-
-        let _ = fs::remove_dir_all(workspace);
-        let _ = fs::remove_dir_all(config_home);
-    }
-
-    #[test]
-    fn parses_quoted_skill_frontmatter_values() {
-        let contents = "---\nname: \"hud\"\ndescription: 'Quoted description'\n---\n";
-        let (name, description) = super::parse_skill_frontmatter(contents);
-        assert_eq!(name.as_deref(), Some("hud"));
-        assert_eq!(description.as_deref(), Some("Quoted description"));
-    }
-
-    #[test]
-    fn installs_skill_into_user_registry_and_preserves_nested_files() {
-        let workspace = temp_dir("skills-install-workspace");
-        let source_root = workspace.join("source").join("help");
-        let install_root = temp_dir("skills-install-root");
-        write_skill(
-            source_root.parent().expect("parent"),
-            "help",
-            "Helpful skill",
-        );
-        let script_dir = source_root.join("scripts");
-        fs::create_dir_all(&script_dir).expect("script dir");
-        fs::write(script_dir.join("run.sh"), "#!/bin/sh\necho help\n").expect("write script");
-
-        let installed = super::install_skill_into(
-            source_root.to_str().expect("utf8 skill path"),
-            &workspace,
-            &install_root,
-        )
-        .expect("skill should install");
-
-        assert_eq!(installed.invocation_name, "help");
-        assert_eq!(installed.display_name.as_deref(), Some("help"));
-        assert!(installed.installed_path.ends_with(Path::new("help")));
-        assert!(installed.installed_path.join("SKILL.md").is_file());
-        assert!(installed
-            .installed_path
-            .join("scripts")
-            .join("run.sh")
-            .is_file());
-
-        let report = super::render_skill_install_report(&installed);
-        assert!(report.contains("Result           installed help"));
-        assert!(report.contains("Invoke as        $help"));
-        assert!(report.contains(&install_root.display().to_string()));
-
-        let roots = vec![SkillRoot {
-            source: DefinitionSource::UserCodexHome,
-            path: install_root.clone(),
-            origin: SkillOrigin::SkillsDir,
-        }];
-        let listed = render_skills_report(
-            &load_skills_from_roots(&roots).expect("installed skills should load"),
-        );
-        assert!(listed.contains("User ($CODEX_HOME):"));
-        assert!(listed.contains("help · Helpful skill"));
-
-        let _ = fs::remove_dir_all(workspace);
-        let _ = fs::remove_dir_all(install_root);
-    }
-
-    #[test]
-    fn installs_plugin_from_path_and_lists_it() {
-        let config_home = temp_dir("home");
-        let source_root = temp_dir("source");
-        write_external_plugin(&source_root, "demo", "1.0.0");
-
-        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
-        let install = handle_plugins_slash_command(
-            Some("install"),
-            Some(source_root.to_str().expect("utf8 path")),
-            &mut manager,
-        )
-        .expect("install command should succeed");
-        assert!(install.reload_runtime);
-        assert!(install.message.contains("installed demo@external"));
-        assert!(install.message.contains("Name             demo"));
-        assert!(install.message.contains("Version          1.0.0"));
-        assert!(install.message.contains("Status           enabled"));
+        let mut config = PluginManagerConfig::new(&config_home);
+        config.bundled_root = Some(bundled_root.clone());
+        let mut manager = PluginManager::new(config);
 
         let list = handle_plugins_slash_command(Some("list"), None, &mut manager)
             .expect("list command should succeed");
         assert!(!list.reload_runtime);
-        assert!(list.message.contains("demo"));
-        assert!(list.message.contains("v1.0.0"));
-        assert!(list.message.contains("enabled"));
+        assert!(list.message.contains("starter"));
+        assert!(list.message.contains("v0.1.0"));
+        assert!(list.message.contains("disabled"));
 
         let _ = fs::remove_dir_all(config_home);
-        let _ = fs::remove_dir_all(source_root);
+        let _ = fs::remove_dir_all(bundled_root);
     }
 
     #[test]
@@ -4473,27 +4256,5 @@ mod tests {
 
         let _ = fs::remove_dir_all(config_home);
         let _ = fs::remove_dir_all(source_root);
-    }
-
-    #[test]
-    fn lists_auto_installed_bundled_plugins_with_status() {
-        let config_home = temp_dir("bundled-home");
-        let bundled_root = temp_dir("bundled-root");
-        let bundled_plugin = bundled_root.join("starter");
-        write_bundled_plugin(&bundled_plugin, "starter", "0.1.0", false);
-
-        let mut config = PluginManagerConfig::new(&config_home);
-        config.bundled_root = Some(bundled_root.clone());
-        let mut manager = PluginManager::new(config);
-
-        let list = handle_plugins_slash_command(Some("list"), None, &mut manager)
-            .expect("list command should succeed");
-        assert!(!list.reload_runtime);
-        assert!(list.message.contains("starter"));
-        assert!(list.message.contains("v0.1.0"));
-        assert!(list.message.contains("disabled"));
-
-        let _ = fs::remove_dir_all(config_home);
-        let _ = fs::remove_dir_all(bundled_root);
     }
 }

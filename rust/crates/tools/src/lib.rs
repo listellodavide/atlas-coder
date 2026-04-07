@@ -522,6 +522,23 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
             required_permission: PermissionMode::ReadOnly,
         },
         ToolSpec {
+            name: "WebDynamic",
+            description: "Fetch a URL with JavaScript execution, handle dynamic React websites, and extract DOM information.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "format": "uri" },
+                    "prompt": { "type": "string" },
+                    "wait_time_ms": { "type": "integer", "minimum": 0, "default": 5000 },
+                    "selector": { "type": "string" },
+                    "extract_html": { "type": "boolean", "default": false }
+                },
+                "required": ["url", "prompt"],
+                "additionalProperties": false
+            }),
+            required_permission: PermissionMode::ReadOnly,
+        },
+        ToolSpec {
             name: "TodoWrite",
             description: "Update the structured task list for the current session.",
             input_schema: json!({
@@ -1155,6 +1172,7 @@ fn execute_tool_with_enforcer(
         }
         "WebFetch" => from_value::<WebFetchInput>(input).and_then(run_web_fetch),
         "WebSearch" => from_value::<WebSearchInput>(input).and_then(run_web_search),
+        "WebDynamic" => from_value::<WebDynamicInput>(input).and_then(run_web_dynamic),
         "TodoWrite" => from_value::<TodoWriteInput>(input).and_then(run_todo_write),
         "Skill" => from_value::<SkillInput>(input).and_then(run_skill),
         "Agent" => from_value::<AgentInput>(input).and_then(run_agent),
@@ -1740,6 +1758,14 @@ fn run_web_search(input: WebSearchInput) -> Result<String, String> {
     to_pretty_json(execute_web_search(&input)?)
 }
 
+#[allow(clippy::needless_pass_by_value)]
+fn run_web_dynamic(input: WebDynamicInput) -> Result<String, String> {
+    // Use tokio::runtime to run the async function
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let result = runtime.block_on(execute_web_dynamic(&input))?;
+    to_pretty_json(result)
+}
+
 fn run_todo_write(input: TodoWriteInput) -> Result<String, String> {
     to_pretty_json(execute_todo_write(input)?)
 }
@@ -1839,6 +1865,15 @@ struct WebSearchInput {
     query: String,
     allowed_domains: Option<Vec<String>>,
     blocked_domains: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebDynamicInput {
+    url: String,
+    prompt: String,
+    wait_time_ms: Option<u64>,
+    selector: Option<String>,
+    extract_html: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2115,6 +2150,20 @@ struct WebSearchOutput {
     results: Vec<WebSearchResultItem>,
     #[serde(rename = "durationSeconds")]
     duration_seconds: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct WebDynamicOutput {
+    bytes: usize,
+    code: u16,
+    #[serde(rename = "codeText")]
+    code_text: String,
+    result: String,
+    #[serde(rename = "durationMs")]
+    duration_ms: u128,
+    url: String,
+    #[serde(rename = "jsExecuted")]
+    js_executed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -2431,6 +2480,101 @@ fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutput, String>
         duration_seconds: started.elapsed().as_secs_f64(),
     })
 }
+
+async fn execute_web_dynamic(input: &WebDynamicInput) -> Result<WebDynamicOutput, String> {
+    let started = Instant::now();
+    let request_url = normalize_fetch_url(&input.url)?;
+    let wait_time_ms = input.wait_time_ms.unwrap_or(5000);
+
+    // Initialize Playwright
+    let playwright = playwright::Playwright::initialize()
+        .await
+        .map_err(|e| format!("Failed to initialize Playwright: {}", e))?;
+
+    let browser_type = playwright.chromium();
+    let browser = browser_type
+        .launcher()
+        .headless(true)
+        .launch()
+        .await
+        .map_err(|e| format!("Failed to launch browser: {}", e))?;
+
+    let context = browser
+        .context_builder()
+        .build()
+        .await
+        .map_err(|e| format!("Failed to create browser context: {}", e))?;
+
+    let page = context
+        .new_page()
+        .await
+        .map_err(|e| format!("Failed to create new page: {}", e))?;
+
+    // Navigate to the URL
+    page.goto_builder(&request_url)
+        .goto()
+        .await
+        .map_err(|e| format!("Failed to navigate to URL: {}", e))?;
+
+    // Wait for JavaScript to execute
+    let wait_duration = std::time::Duration::from_millis(wait_time_ms);
+    tokio::time::sleep(wait_duration).await;
+
+    // If a selector is provided, wait for it to appear
+    if let Some(selector) = &input.selector {
+        let _ = page
+            .wait_for_selector_builder(selector)
+            .timeout((wait_time_ms as i32 + 5000) as f64)
+            .wait_for_selector()
+            .await;
+    }
+
+    // Extract content based on extract_html flag
+    let content: String = if input.extract_html.unwrap_or(false) {
+        page.evaluate("() => document.documentElement.outerHTML", ())
+            .await
+            .map_err(|e| format!("Failed to extract HTML: {:?}", e))?
+    } else {
+        page.evaluate("() => document.body.innerText", ())
+            .await
+            .map_err(|e| format!("Failed to extract text: {:?}", e))?
+    };
+
+    // Get the final URL after all redirects
+    let final_url = page
+        .url()
+        .map_err(|e| format!("Failed to get page URL: {:?}", e))?
+        .to_string();
+
+    let bytes = content.len();
+    let code = 200u16; // Successfully executed JavaScript
+    let code_text = "OK".to_string();
+
+    let normalized = if input.extract_html.unwrap_or(false) {
+        normalize_fetched_content(&content, "text/html")
+    } else {
+        content.clone()
+    };
+
+    let result = summarize_web_fetch(&final_url, &input.prompt, &normalized, &content, "text/html");
+
+    // Close the browser
+    browser
+        .close()
+        .await
+        .map_err(|e| format!("Failed to close browser: {}", e))?;
+
+    Ok(WebDynamicOutput {
+        bytes,
+        code,
+        code_text,
+        result,
+        duration_ms: started.elapsed().as_millis(),
+        url: final_url,
+        js_executed: true,
+    })
+}
+
 
 fn build_http_client() -> Result<Client, String> {
     Client::builder()
@@ -3035,6 +3179,7 @@ fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "WebFetch",
             "WebSearch",
+            "WebDynamic",
             "ToolSearch",
             "Skill",
             "StructuredOutput",
@@ -3045,6 +3190,7 @@ fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "WebFetch",
             "WebSearch",
+            "WebDynamic",
             "ToolSearch",
             "Skill",
             "TodoWrite",
@@ -3058,6 +3204,7 @@ fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "WebFetch",
             "WebSearch",
+            "WebDynamic",
             "ToolSearch",
             "TodoWrite",
             "StructuredOutput",
@@ -3070,6 +3217,7 @@ fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "WebFetch",
             "WebSearch",
+            "WebDynamic",
             "ToolSearch",
             "Skill",
             "StructuredOutput",
@@ -3093,6 +3241,7 @@ fn allowed_tools_for_subagent(subagent_type: &str) -> BTreeSet<String> {
             "grep_search",
             "WebFetch",
             "WebSearch",
+            "WebDynamic",
             "TodoWrite",
             "Skill",
             "ToolSearch",

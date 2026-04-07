@@ -1,0 +1,2 @@
+{"created_at_ms":1775574837070,"model":"gemini/gemini-3.1-pro-preview","session_id":"session-1775574837070-0","type":"session_meta","updated_at_ms":1775574837070,"version":1}
+{"message":{"blocks":[{"text":"hello what it is your name cam you use tools like WebSearch for weather forecat inside a chat request ?","type":"text"}],"role":"user"},"type":"message"}

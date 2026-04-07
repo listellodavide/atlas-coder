@@ -26,6 +26,7 @@ pub enum ProviderKind {
     Anthropic,
     Xai,
     OpenAi,
+    Gemini,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +142,7 @@ pub fn resolve_model_alias(model: &str) -> String {
                     _ => trimmed,
                 },
                 ProviderKind::OpenAi => trimmed,
+                ProviderKind::Gemini => trimmed, // Add handling for Gemini if needed
             })
         })
         .map_or_else(|| trimmed.to_string(), ToOwned::to_owned)
@@ -171,6 +173,14 @@ pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
             auth_env: "OLLAMA_API_KEY",
             base_url_env: "OLLAMA_BASE_URL",
             default_base_url: "http://localhost:11434/v1",
+        });
+    }
+    if canonical.starts_with("gemini") {
+        return Some(ProviderMetadata {
+            provider: ProviderKind::Gemini,
+            auth_env: "GEMINI_API_KEY",
+            base_url_env: "GEMINI_BASE_URL",
+            default_base_url: "https://generativelanguage.googleapis.com/v1beta/",
         });
     }
     None

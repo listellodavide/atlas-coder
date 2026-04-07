@@ -1,0 +1,2 @@
+{"created_at_ms":1775569553157,"model":"gemini/gemini-3.1-pro-preview","session_id":"session-1775569553157-0","type":"session_meta","updated_at_ms":1775569553157,"version":1}
+{"message":{"blocks":[{"text":"what it is your name ?","type":"text"}],"role":"user"},"type":"message"}

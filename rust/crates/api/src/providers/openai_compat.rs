@@ -64,10 +64,21 @@ impl OpenAiCompatConfig {
     }
 
     #[must_use]
+    pub const fn gemini() -> Self {
+        Self {
+            provider_name: "Gemini",
+            api_key_env: "GEMINI_API_KEY",
+            base_url_env: "GEMINI_BASE_URL",
+            default_base_url: "https://generativelanguage.googleapis.com/v1beta/",
+        }
+    }
+
+    #[must_use]
     pub fn credential_env_vars(self) -> &'static [&'static str] {
         match self.provider_name {
             "xAI" => XAI_ENV_VARS,
             "OpenAI" => OPENAI_ENV_VARS,
+            "Gemini" => &["GEMINI_API_KEY"],
             // Ollama doesn't require an API key by default
             _ => &[],
         }
@@ -150,8 +161,19 @@ impl OpenAiCompatClient {
         };
         let response = self.send_with_retry(&request).await?;
         let request_id = request_id_from_headers(response.headers());
-        let payload = response.json::<ChatCompletionResponse>().await?;
-        let mut normalized = normalize_response(&request.model, payload)?;
+
+        // Determine if this is a Gemini request based on provider name or model
+        let is_gemini = self.config.provider_name == "Gemini"
+            || request.model.starts_with("gemini/");
+
+        let mut normalized = if is_gemini {
+            let payload = response.json::<GeminiResponse>().await?;
+            normalize_gemini_response(&request.model, payload)?
+        } else {
+            let payload = response.json::<ChatCompletionResponse>().await?;
+            normalize_response(&request.model, payload)?
+        };
+
         if normalized.request_id.is_none() {
             normalized.request_id = request_id;
         }
@@ -210,12 +232,41 @@ impl OpenAiCompatClient {
         &self,
         request: &MessageRequest,
     ) -> Result<reqwest::Response, ApiError> {
-        let request_url = chat_completions_endpoint(&self.base_url);
-        self.http
+        // Determine if this is a Gemini request based on provider name or model
+        let is_gemini = self.config.provider_name == "Gemini"
+            || request.model.starts_with("gemini/");
+
+        let mut request_url = chat_completions_endpoint(&self.base_url);
+
+        // For Gemini, replace the model placeholder with the actual model name
+        if is_gemini {
+            let model_name = if request.model.starts_with("gemini/") {
+                request.model.strip_prefix("gemini/").unwrap_or(&request.model)
+            } else {
+                &request.model
+            };
+            request_url = request_url.replace("{model}", model_name);
+        }
+
+        let mut req = self.http
             .post(&request_url)
-            .header("content-type", "application/json")
-            .bearer_auth(&self.api_key)
-            .json(&build_chat_completion_request(request, self.config()))
+            .header("content-type", "application/json");
+
+        // Gemini uses API key as query parameter, not Bearer auth
+        if is_gemini {
+            req = req.query(&[("key", &self.api_key)]);
+        } else {
+            req = req.bearer_auth(&self.api_key);
+        }
+
+        // Use appropriate request builder based on provider
+        let request_body = if is_gemini {
+            build_gemini_request(request)
+        } else {
+            build_chat_completion_request(request, self.config())
+        };
+
+        req.json(&request_body)
             .send()
             .await
             .map_err(ApiError::from)
@@ -658,6 +709,40 @@ struct ErrorBody {
     message: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GeminiResponse {
+    candidates: Vec<GeminiCandidate>,
+    #[serde(default)]
+    usage_metadata: Option<GeminiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiCandidate {
+    content: GeminiContent,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiPart {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiUsage {
+    #[serde(default)]
+    prompt_token_count: u32,
+    #[serde(default)]
+    candidates_token_count: u32,
+    #[serde(default)]
+    total_token_count: u32,
+}
+
 fn build_chat_completion_request(request: &MessageRequest, config: OpenAiCompatConfig) -> Value {
     let mut messages = Vec::new();
     if let Some(system) = request.system.as_ref().filter(|value| !value.is_empty()) {
@@ -831,6 +916,54 @@ fn normalize_response(
     })
 }
 
+fn normalize_gemini_response(
+    model: &str,
+    response: GeminiResponse,
+) -> Result<MessageResponse, ApiError> {
+    let candidate = response
+        .candidates
+        .into_iter()
+        .next()
+        .ok_or(ApiError::InvalidSseFrame(
+            "gemini response missing candidates",
+        ))?;
+    let mut content = Vec::new();
+
+    // Combine all text parts from the Gemini response
+    let text = candidate.content.parts.iter().map(|part| part.text.as_str()).collect::<Vec<_>>().join("");
+    if !text.is_empty() {
+        content.push(OutputContentBlock::Text { text });
+    }
+
+    Ok(MessageResponse {
+        id: format!("gemini-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+        kind: "message".to_string(),
+        role: "assistant".to_string(),
+        content,
+        model: model.to_string(),
+        stop_reason: candidate.finish_reason.map(|reason| normalize_gemini_finish_reason(&reason)),
+        stop_sequence: None,
+        usage: Usage {
+            input_tokens: response.usage_metadata.as_ref().map_or(0, |usage| usage.prompt_token_count),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: response.usage_metadata.as_ref().map_or(0, |usage| usage.candidates_token_count),
+        },
+        request_id: None,
+    })
+}
+
+fn normalize_gemini_finish_reason(reason: &str) -> String {
+    match reason {
+        "STOP" => "end_turn",
+        "MAX_TOKENS" => "max_tokens",
+        "SAFETY" => "safety",
+        "RECITATION" => "recitation",
+        other => other,
+    }
+    .to_string()
+}
+
 fn parse_tool_arguments(arguments: &str) -> Value {
     serde_json::from_str(arguments).unwrap_or_else(|_| json!({ "raw": arguments }))
 }
@@ -905,6 +1038,10 @@ fn chat_completions_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
     if trimmed.ends_with("/chat/completions") {
         trimmed.to_string()
+    } else if trimmed.contains("generativelanguage.googleapis.com") {
+        // For Gemini, we need to use the model from the request, but since we don't have access to it here,
+        // we'll use a placeholder that will be replaced later
+        format!("{trimmed}/models/{{model}}:generateContent")
     } else {
         format!("{trimmed}/chat/completions")
     }
@@ -1107,6 +1244,10 @@ mod tests {
             chat_completions_endpoint("https://api.x.ai/v1/chat/completions"),
             "https://api.x.ai/v1/chat/completions"
         );
+        assert_eq!(
+            chat_completions_endpoint("https://generativelanguage.googleapis.com/v1beta/"),
+            "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        );
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -1121,4 +1262,161 @@ mod tests {
         assert_eq!(normalize_finish_reason("stop"), "end_turn");
         assert_eq!(normalize_finish_reason("tool_calls"), "tool_use");
     }
+
+    #[test]
+    fn builds_gemini_request_correctly() {
+        let request = MessageRequest {
+            model: "gemini-model".to_string(),
+            max_tokens: 100,
+            messages: vec![
+                InputMessage {
+                    role: "user".to_string(),
+                    content: vec![InputContentBlock::Text {
+                        text: "Hello, how's the weather?".to_string(),
+                    }],
+                },
+                InputMessage {
+                    role: "assistant".to_string(),
+                    content: vec![InputContentBlock::Text {
+                        text: "The weather is great!".to_string(),
+                    }],
+                },
+            ],
+            system: Some("You are a helpful assistant.".to_string()),
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        };
+
+        let payload = super::build_gemini_request(&request);
+
+        // Check system_instruction
+        assert_eq!(
+            payload["system_instruction"],
+            json!({
+                "parts": [
+                    {
+                        "text": "You are a helpful assistant."
+                    }
+                ]
+            })
+        );
+
+        // Check contents
+        let expected_contents = json!([
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": "Hello, how's the weather?"
+                    }
+                ]
+            },
+            {
+                "role": "model",
+                "parts": [
+                    {
+                        "text": "The weather is great!"
+                    }
+                ]
+            }
+        ]);
+        assert_eq!(payload["contents"], expected_contents);
+
+        // Check generationConfig
+        assert_eq!(
+            payload["generationConfig"],
+            json!({
+                "maxOutputTokens": 100
+            })
+        );
+    }
 }
+
+fn build_gemini_request(request: &MessageRequest) -> Value {
+    let mut contents = Vec::new();
+    let mut system_instruction = None;
+
+    // Handle system message separately for Gemini
+    if let Some(system) = request.system.as_ref().filter(|value| !value.is_empty()) {
+        system_instruction = Some(json!({
+            "parts": [
+                {
+                    "text": system
+                }
+            ]
+        }));
+    }
+
+    // Convert messages to Gemini format
+    for message in &request.messages {
+        match message.role.as_str() {
+            "user" => {
+                // Combine all text content from user message
+                let mut text = String::new();
+                for block in &message.content {
+                    if let InputContentBlock::Text { text: value } = block {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(value);
+                    }
+                }
+                if !text.is_empty() {
+                    contents.push(json!({
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": text
+                            }
+                        ]
+                    }));
+                }
+            }
+            "assistant" => {
+                // Combine all text content from assistant message
+                let mut text = String::new();
+                for block in &message.content {
+                    if let InputContentBlock::Text { text: value } = block {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(value);
+                    }
+                }
+                if !text.is_empty() {
+                    contents.push(json!({
+                        "role": "model",
+                        "parts": [
+                            {
+                                "text": text
+                            }
+                        ]
+                    }));
+                }
+            }
+            _ => {} // Skip other message types for now
+        }
+    }
+
+    let mut payload = json!({
+        "contents": contents
+    });
+
+    if let Some(system) = system_instruction {
+        payload["system_instruction"] = system;
+    }
+
+    // Gemini doesn't use max_tokens in the same way, but we can set generationConfig
+    if request.max_tokens > 0 {
+        payload["generationConfig"] = json!({
+            "maxOutputTokens": request.max_tokens
+        });
+    }
+
+    // Note: Gemini tools (function calling) are not supported yet
+    // TODO: Implement Gemini-specific tool format when needed
+
+    payload
+}
+
