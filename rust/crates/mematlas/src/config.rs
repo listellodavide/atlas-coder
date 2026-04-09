@@ -34,14 +34,10 @@ impl MemAtlasConfig {
 }
 
 fn dirs_base(project_root: &Path) -> PathBuf {
-    use sha2::Digest;
     let canonical = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());
-    let hash = format!(
-        "{:x}",
-        sha2::Sha256::digest(canonical.to_string_lossy().as_bytes())
-    );
+    let hash = blake3::hash(canonical.to_string_lossy().as_bytes()).to_hex().to_string();
     let short = &hash[..12];
 
     if let Ok(data) = std::env::var("XDG_DATA_HOME") {

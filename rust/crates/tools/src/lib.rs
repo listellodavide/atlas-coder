@@ -2492,8 +2492,12 @@ async fn execute_web_dynamic(input: &WebDynamicInput) -> Result<WebDynamicOutput
         .map_err(|e| format!("Failed to initialize Playwright: {}", e))?;
 
     let browser_type = playwright.chromium();
+    let browser_path = std::env::var("CHROME_EXECUTABLE_PATH")
+        .unwrap_or_else(|_| "/usr/bin/chromium".to_string());
+
     let browser = browser_type
         .launcher()
+        .executable(std::path::Path::new(&browser_path))
         .headless(true)
         .launch()
         .await
